@@ -123,6 +123,7 @@ class NetworkTrainer(object):
         
         
         self.all_val_eval_metrics = []  # does not have to be used
+        self.all_val_class_acc = [] # does not have to be used
         self.epoch = 0
         self.log_file = None
         self.deterministic = deterministic
@@ -215,14 +216,26 @@ class NetworkTrainer(object):
 
             x_values = list(range(self.epoch + 1))
 
-            ax.plot(x_values, self.all_tr_losses, color='b', ls='-', label="loss_tr")
+            # ax.plot(x_values, self.all_tr_losses, color='b', ls='-', label="loss_tr")
+            ax.plot(x_values, self.all_tr_seg_losses, color='r', ls='-', label="seg_loss_tr")
+            ax.plot(x_values, self.all_tr_class_losses, color='g', ls='-', label="class_loss_tr")
 
-            ax.plot(x_values, self.all_val_losses, color='r', ls='-', label="loss_val, train=False")
+            ax.plot(x_values, self.all_val_seg_losses, color='r', ls='--', dashes=(5, 5), label="seg_loss_val, train=False")
+            ax.plot(x_values, self.all_val_class_losses, color='g', ls='--', dashes=(5, 5), label="class_loss_val, train=False")
 
             if len(self.all_val_losses_tr_mode) > 0:
-                ax.plot(x_values, self.all_val_losses_tr_mode, color='g', ls='-', label="loss_val, train=True")
+                # ax.plot(x_values, self.all_val_losses_tr_mode, color='g', ls='-', label="loss_val, train=True")
+                ax.plot(x_values, self.all_val_seg_losses_tr_mode, color='r', ls='--', dashes=(5, 5), label="class_loss_val, train=True")
+                ax.plot(x_values, self.all_val_class_losses_tr_mode, color='g', ls='--', dashes=(5, 5), label="seg_loss_val, train=True")
             if len(self.all_val_eval_metrics) == len(x_values):
-                ax2.plot(x_values, self.all_val_eval_metrics, color='g', ls='--', label="evaluation metric")
+                ax2.plot(x_values, self.all_val_eval_metrics, color='b', ls='-', label="global_dice_score")
+            
+            if len(self.all_val_class_acc) == len(x_values):
+                ax2.plot(x_values, self.all_val_class_acc, color='b', ls='--', dashes=(5, 5), label="class_acc")
+                
+            self.print_to_log_file(f"x_values: {x_values}")
+            self.print_to_log_file(f"self.all_val_eval_metrics (plot_progress): {self.all_val_eval_metrics}")
+            self.print_to_log_file(f"self.all_val_class_acc (plot_progress): {self.all_val_class_acc}")
 
             ax.set_xlabel("epoch")
             ax.set_ylabel("loss")

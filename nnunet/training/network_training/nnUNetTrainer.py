@@ -840,32 +840,37 @@ class nnUNetTrainer(NetworkTrainer):
             # self.correct_classifications += correct.item()
             # self.total_classifications += class_target.size(0)
 
-    def finish_online_evaluation(self):
-        self.online_eval_tp = np.sum(self.online_eval_tp, 0)
-        self.online_eval_fp = np.sum(self.online_eval_fp, 0)
-        self.online_eval_fn = np.sum(self.online_eval_fn, 0)
+#     def finish_online_evaluation(self):
+#         self.online_eval_tp = np.sum(self.online_eval_tp, 0)
+#         self.online_eval_fp = np.sum(self.online_eval_fp, 0)
+#         self.online_eval_fn = np.sum(self.online_eval_fn, 0)
 
-        global_dc_per_class = [i for i in [2 * i / (2 * i + j + k) for i, j, k in
-                                           zip(self.online_eval_tp, self.online_eval_fp, self.online_eval_fn)]
-                               if not np.isnan(i)]
-        self.all_val_eval_metrics.append(np.mean(global_dc_per_class))
+#         global_dc_per_class = [i for i in [2 * i / (2 * i + j + k) for i, j, k in
+#                                            zip(self.online_eval_tp, self.online_eval_fp, self.online_eval_fn)]
+#                                if not np.isnan(i)]
+#         self.all_val_eval_metrics.append(np.mean(global_dc_per_class))
 
-        self.print_to_log_file("Average global foreground Dice:", [np.round(i, 4) for i in global_dc_per_class])
-        self.print_to_log_file("(interpret this as an estimate for the Dice of the different classes. This is not "
-                               "exact.)")
+#         self.print_to_log_file("Average global foreground Dice:", [np.round(i, 4) for i in global_dc_per_class])
+#         self.print_to_log_file("(interpret this as an estimate for the Dice of the different classes. This is not "
+#                                "exact.)")
 
-        if self.total_classifications > 0:
-            classification_accuracy = self.correct_classifications / self.total_classifications
-        else:
-            classification_accuracy = 0
-        self.print_to_log_file("Average classification accuracy:", np.round(classification_accuracy, 4))
+#         if self.total_classifications > 0:
+#             classification_accuracy = self.correct_classifications / self.total_classifications
+#             self.all_val_class_acc.append(classification_accuracy)
+#             self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
+#         else:
+#             classification_accuracy = 0
+#             self.all_val_class_acc.append(classification_accuracy)
+#             self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
+        
+#         self.print_to_log_file("Average classification accuracy:", np.round(classification_accuracy, 4))
 
-        self.online_eval_foreground_dc = []
-        self.online_eval_tp = []
-        self.online_eval_fp = []
-        self.online_eval_fn = []
-        self.correct_classifications = 0
-        self.total_classifications = 0
+#         self.online_eval_foreground_dc = []
+#         self.online_eval_tp = []
+#         self.online_eval_fp = []
+#         self.online_eval_fn = []
+#         self.correct_classifications = 0
+#         self.total_classifications = 0
 
 
     def run_online_evaluation(self, output, output_cls, target, target_cls):
@@ -926,8 +931,14 @@ class nnUNetTrainer(NetworkTrainer):
         
         if self.total_classifications > 0:
             classification_accuracy = self.correct_classifications / self.total_classifications
+            self.all_val_class_acc.append(classification_accuracy)
+            self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
         else:
             classification_accuracy = 0
+            self.all_val_class_acc.append(classification_accuracy)
+            self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
+            
+            
         self.print_to_log_file("Average classification accuracy:", np.round(classification_accuracy, 4))
         self.print_to_log_file(f"{self.correct_classifications} correct out of {self.total_classifications} total.")
 
