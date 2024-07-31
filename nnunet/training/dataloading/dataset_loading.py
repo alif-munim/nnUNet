@@ -430,7 +430,7 @@ class DataLoader3D(SlimDataLoaderBase):
         self.pad_sides = pad_sides
         self.data_shape, self.seg_shape = self.determine_shapes()
         
-        with open('/scratch/alif/nnUNet/RawData/Task06_PancreasUHN/class_mapping.json', 'r') as f:
+        with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
             self.class_mapping = {key.replace('_0000.nii.gz','.npz'):value for key, value in self.class_mapping.items()}
 
@@ -665,7 +665,7 @@ class DataLoader2D(SlimDataLoaderBase):
             self.need_to_pad += pad_sides
         self.pad_sides = pad_sides
         self.data_shape, self.seg_shape = self.determine_shapes()
-        with open('/scratch/alif/nnUNet/RawData/Task06_PancreasUHN/class_mapping.json', 'r') as f:
+        with open('/scratch/alif/nnUNet/original_data/Task06_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
             self.class_mapping = {key.replace('_0000.nii.gz','.npz'):value for key, value in self.class_mapping.items()}
 
