@@ -106,9 +106,22 @@ class NetworkTrainer(object):
         self.best_val_eval_criterion_MA = None
         self.best_MA_tr_loss_for_patience = None
         self.best_epoch_based_on_MA_tr_loss = None
+        
         self.all_tr_losses = []
+        self.all_tr_seg_losses = []
+        self.all_tr_class_losses = []
+        
+        
         self.all_val_losses = []
+        self.all_val_seg_losses = []
+        self.all_val_class_losses = []
+        
+        
         self.all_val_losses_tr_mode = []
+        self.all_val_seg_losses_tr_mode = []
+        self.all_val_class_losses_tr_mode = []
+        
+        
         self.all_val_eval_metrics = []  # does not have to be used
         self.epoch = 0
         self.log_file = None
@@ -438,7 +451,10 @@ class NetworkTrainer(object):
         while self.epoch < self.max_num_epochs:
             self.print_to_log_file("\nepoch: ", self.epoch)
             epoch_start_time = time()
+            
             train_losses_epoch = []
+            seg_losses_epoch = []
+            class_losses_epoch = []
 
             # train one epoch
             if not self.eval_only:
@@ -449,17 +465,31 @@ class NetworkTrainer(object):
                         for b in tbar:
                             tbar.set_description("Epoch {}/{}".format(self.epoch+1, self.max_num_epochs))
 
-                            l = self.run_iteration(self.tr_gen, True)
+                            seg_loss, class_loss = self.run_iteration(self.tr_gen, True)
+                            l = seg_loss + class_loss
 
                             tbar.set_postfix(loss=l)
+                            
                             train_losses_epoch.append(l)
+                            seg_losses_epoch.append(seg_loss)
+                            class_losses_epoch.append(class_loss)
                 else:
                     for _ in range(self.num_batches_per_epoch):
-                        l = self.run_iteration(self.tr_gen, True)
+                        seg_loss, class_loss = self.run_iteration(self.tr_gen, True)
+                        l = seg_loss + class_loss
+                        
                         train_losses_epoch.append(l)
+                        seg_losses_epoch.append(seg_loss)
+                        class_losses_epoch.append(class_loss)
 
+                self.all_tr_seg_losses.append(np.mean(seg_losses_epoch))
+                self.print_to_log_file("segmentation train loss : %.4f" % self.all_tr_seg_losses[-1])
+                
+                self.all_tr_class_losses.append(np.mean(class_losses_epoch))
+                self.print_to_log_file("classification train loss : %.4f" % self.all_tr_class_losses[-1])
+                
                 self.all_tr_losses.append(np.mean(train_losses_epoch))
-                self.print_to_log_file("train loss : %.4f" % self.all_tr_losses[-1])
+                self.print_to_log_file("overall train loss : %.4f" % self.all_tr_losses[-1])
 
 #             with torch.no_grad():
 #                 # validation with train=False
@@ -485,13 +515,28 @@ class NetworkTrainer(object):
                 # validation with train=False
                 if self.use_valid_progress_bar:
                     self.network.eval()
+                    
                     val_losses = []
+                    val_seg_losses = []
+                    val_class_losses = []
+                    
                     with trange(self.num_val_batches_per_epoch) as tbar:
                         for b in tbar:
-                            l = self.run_iteration(self.val_gen, False, True)
+                            seg_loss, class_loss = self.run_iteration(self.val_gen, False, True)
+                            l = seg_loss + class_loss
+                            
                             val_losses.append(l)
+                            val_seg_losses.append(seg_loss)
+                            val_class_losses.append(class_loss)
+                            
+                        self.all_val_seg_losses.append(np.mean(val_seg_losses))
+                        self.print_to_log_file("segmentation validation loss: %.4f" % self.all_val_seg_losses[-1])
+                        
+                        self.all_val_class_losses.append(np.mean(val_class_losses))
+                        self.print_to_log_file("classification validation loss: %.4f" % self.all_val_class_losses[-1])
+                        
                         self.all_val_losses.append(np.mean(val_losses))
-                        self.print_to_log_file("validation loss: %.4f" % self.all_val_losses[-1])
+                        self.print_to_log_file("overall validation loss: %.4f" % self.all_val_losses[-1])
                             
                     # for b in range(self.num_val_batches_per_epoch):
                     #     l = self.run_iteration(self.val_gen, False, True)
@@ -503,12 +548,26 @@ class NetworkTrainer(object):
                         self.network.train()
                         # validation with train=True
                         val_losses = []
+                        val_seg_losses = []
+                        val_class_losses = []
+                        
                         with trange(self.num_val_batches_per_epoch) as tbar:
                             for b in tbar:
-                                l = self.run_iteration(self.val_gen, False)
+                                seg_loss, class_loss = self.run_iteration(self.val_gen, False)
+                                l = seg_loss + class_loss
+                                
                                 val_losses.append(l)
-                            self.all_val_losses_tr_mode.append(np.mean(val_losses))
-                            self.print_to_log_file("validation loss (train=True): %.4f" % self.all_val_losses_tr_mode[-1])
+                                val_seg_losses.append(seg_loss)
+                                val_class_losses.append(class_loss)
+                                
+                            self.all_val_seg_losses_tr_mode.append(np.mean(val_seg_losses))
+                            self.print_to_log_file("segmentation validation loss (train=True): %.4f" % self.all_val_seg_losses_tr_mode[-1])
+                            
+                            self.all_val_class_losses_tr_mode.append(np.mean(val_class_losses))
+                            self.print_to_log_file("segmentation validation loss (train=True): %.4f" % self.all_val_class_losses_tr_mode[-1])
+                            
+                            self.all_val_losses.append(np.mean(val_losses))
+                            self.print_to_log_file("overall validation loss: %.4f" % self.all_val_losses[-1])
                                 
                     # for b in range(self.num_val_batches_per_epoch):
                     #     l = self.run_iteration(self.val_gen, False)
@@ -518,21 +577,49 @@ class NetworkTrainer(object):
                 else:
                     self.network.eval()
                     val_losses = []
+                    val_seg_losses = []
+                    val_class_losses = []
+                    
                     for b in range(self.num_val_batches_per_epoch):
-                        l = self.run_iteration(self.val_gen, False, True)
+                        seg_loss, class_loss = self.run_iteration(self.val_gen, False, True)
+                        l = seg_loss + class_loss
+                        
                         val_losses.append(l)
+                        val_seg_losses.append(seg_loss)
+                        val_class_losses.append(class_loss)
+                        
+                    self.all_val_seg_losses.append(np.mean(val_seg_losses))
+                    self.print_to_log_file("segmentation validation loss: %.4f" % self.all_val_seg_losses[-1])
+
+                    self.all_val_class_losses.append(np.mean(val_class_losses))
+                    self.print_to_log_file("classification validation loss: %.4f" % self.all_val_class_losses[-1])
+                    
                     self.all_val_losses.append(np.mean(val_losses))
-                    self.print_to_log_file("validation loss: %.4f" % self.all_val_losses[-1])
+                    self.print_to_log_file("overall validation loss: %.4f" % self.all_val_losses[-1])
 
                     if self.also_val_in_tr_mode:
                         self.network.train()
                         # validation with train=True
+                        
                         val_losses = []
+                        val_seg_losses = []
+                        val_class_losses = []
+                        
                         for b in range(self.num_val_batches_per_epoch):
-                            l = self.run_iteration(self.val_gen, False)
+                            seg_loss, class_loss = self.run_iteration(self.val_gen, False)
+                            l = seg_loss + class_loss
+                            
                             val_losses.append(l)
-                        self.all_val_losses_tr_mode.append(np.mean(val_losses))
-                        self.print_to_log_file("validation loss (train=True): %.4f" % self.all_val_losses_tr_mode[-1])
+                            val_seg_losses.append(seg_loss)
+                            val_class_losses.append(class_loss)
+                        self.all_val_seg_losses_tr_mode.append(np.mean(val_seg_losses))
+                        self.print_to_log_file("segmentation validation loss (train=True): %.4f" % self.all_val_seg_losses_tr_mode[-1])
+
+                        self.all_val_class_losses_tr_mode.append(np.mean(val_class_losses))
+                        self.print_to_log_file("segmentation validation loss (train=True): %.4f" % self.all_val_class_losses_tr_mode[-1])
+                        
+                        self.all_val_losses.append(np.mean(val_losses))
+                        self.print_to_log_file("overall validation loss (train=True): %.4f" % self.all_val_losses[-1])
 
             self.update_train_loss_MA()  # needed for lr scheduler and stopping of training
 

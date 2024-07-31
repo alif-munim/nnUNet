@@ -324,7 +324,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         del target
 
-        return loss.detach().cpu().numpy()
+        return seg_loss.detach().cpu().numpy(), class_loss.detach().cpu().numpy()
 
     def do_split(self):
         """
@@ -341,7 +341,11 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             # if fold==all then we use all images for training and validation
             tr_keys = val_keys = list(self.dataset.keys())
         else:
-            splits_file = join(self.dataset_directory, "splits_final.pkl")
+            # splits_file = join(self.dataset_directory, "splits_final.pkl")
+            
+            self.print_to_log_file("Using custom training and validation split for UHN pancreas dataset...")
+            self.print_to_log_file("Remember to use fold 0!")
+            splits_file = join(self.dataset_directory, "splits_custom_uhn.pkl")
 
             # if the split file does not exist we need to create it
             if not isfile(splits_file):
