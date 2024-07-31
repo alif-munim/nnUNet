@@ -233,9 +233,9 @@ class NetworkTrainer(object):
             if len(self.all_val_class_acc) == len(x_values):
                 ax2.plot(x_values, self.all_val_class_acc, color='b', ls='--', dashes=(5, 5), label="class_acc")
                 
-            self.print_to_log_file(f"x_values: {x_values}")
-            self.print_to_log_file(f"self.all_val_eval_metrics (plot_progress): {self.all_val_eval_metrics}")
-            self.print_to_log_file(f"self.all_val_class_acc (plot_progress): {self.all_val_class_acc}")
+            # self.print_to_log_file(f"x_values: {x_values}")
+            # self.print_to_log_file(f"self.all_val_eval_metrics (plot_progress): {self.all_val_eval_metrics}")
+            # self.print_to_log_file(f"self.all_val_class_acc (plot_progress): {self.all_val_class_acc}")
 
             ax.set_xlabel("epoch")
             ax.set_ylabel("loss")

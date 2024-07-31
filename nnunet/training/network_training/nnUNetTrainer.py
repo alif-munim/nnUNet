@@ -931,12 +931,11 @@ class nnUNetTrainer(NetworkTrainer):
         
         if self.total_classifications > 0:
             classification_accuracy = self.correct_classifications / self.total_classifications
-            self.all_val_class_acc.append(classification_accuracy)
-            self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
         else:
             classification_accuracy = 0
-            self.all_val_class_acc.append(classification_accuracy)
-            self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
+        
+        self.all_val_class_acc.append(classification_accuracy)
+        # self.print_to_log_file("self.all_val_class_acc (finish_online_evaluation):", self.all_val_class_acc)
             
             
         self.print_to_log_file("Average classification accuracy:", np.round(classification_accuracy, 4))

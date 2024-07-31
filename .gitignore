@@ -1,3 +1,10 @@
+# Data folders
+nnUNet_preprocessed/
+nnUNet_raw/
+nnUNet_raw_data_base/
+nnUNet_trained_models/
+original_data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
