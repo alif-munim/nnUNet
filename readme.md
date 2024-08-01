@@ -50,49 +50,49 @@ export RESULTS_FOLDER="nnUNet/nnUNet_trained_models"
 
 The dataset consists of 360 de-identified 3D pancreas CT scans from the University Health Network (UHN).
 
-Train
-- `subtype0/`
-  - `quiz_0_041.nii.gz`      # Mask (0-background; 1-pancreas; 2-lesion)
-  - `quiz_0_041_0000.nii.gz` # Image
-  - `...`
-- `subtype1/`
-  - `...`
-- `subtype2/`
-  - `...`
+Train/
+├── subtype0/
+│   ├── quiz_0_041.nii.gz # Mask (0-background; 1-pancreas; 2-lesion)
+│   ├── quiz_0_041_0000.nii.gz # Image
+│   ├── ...
+├── subtype1/
+│   ├── ...
+├── subtype2/
+│   ├── ...
 
-Validation
-- `subtype0/`
-  - `quiz_0_168.nii.gz`      # Mask (0-background; 1-pancreas; 2-lesion)
-  - `quiz_0_168_0000.nii.gz` # Image
-  - `...`
-- `subtype1/`
-  - `...`
-- `subtype2/`
-  - `...`
+Validation/
+├── subtype0/
+│   ├── quiz_0_168.nii.gz # Mask (0-background; 1-pancreas; 2-lesion)
+│   ├── quiz_0_168_0000.nii.gz # Image
+│   ├── ...
+├── subtype1/
+│   ├── ...
+├── subtype2/
+│   ├── ...
 
-Test
-- `quiz_037_0000.nii.gz`     # Image
-- `quiz_045_0000.nii.gz`     # Image
-- `quiz_047_0000.nii.gz`     # Image
-- `...`
+Test/
+├── quiz_037_0000.nii.gz # Image
+├── quiz_045_0000.nii.gz # Image
+├── quiz_047_0000.nii.gz # Image
+├── ...
 
 To be compatible with nnU-Net, the directory structure is reformatted as follows:
 
-Task006_PancreasUHN
-- `dataset.json`
-- `class_mapping.json`
-- `imagesTr/`
-  - `case_001_0000.nii.gz`
-  - `case_002_0000.nii.gz`
-  - `...`
-- `imagesTs/`
-  - `case_289_0000.nii.gz`
-  - `case_300_0000.nii.gz`
-  - `...`
-- `labelsTr/`
-  - `case_001.nii.gz`
-  - `case_002.nii.gz`
-  - `...`
+Task006_PancreasUHN/
+├── dataset.json
+├── class_mapping.json
+├── imagesTr/
+│   ├── case_001_0000.nii.gz
+│   ├── case_002_0000.nii.gz
+│   ├── ...
+├── imagesTs/
+│   ├── case_289_0000.nii.gz
+│   ├── case_300_0000.nii.gz
+│   ├── ...
+└── labelsTr/
+    ├── case_001.nii.gz
+    ├── case_002.nii.gz
+    ├── ...
 
 Where `dataset.json` contains the train and test cases, and `class_mapping.json` maps each case to a subtype (0, 1, or 2) as a classification label.
 

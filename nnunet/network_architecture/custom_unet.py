@@ -27,6 +27,110 @@ from torchvision import models
 import torch.nn as nn
 import torch.nn.functional as F
 
+class AttentionPooling(nn.Module):
+    def __init__(self, input_channels):
+        super(AttentionPooling, self).__init__()
+        self.fc = nn.Linear(input_channels, 1)
+
+    def forward(self, x):
+        b, c, *dims = x.size()
+        x_flat = x.view(b, c, -1)
+        attention_weights = F.softmax(self.fc(x_flat), dim=2)
+        weighted_sum = torch.sum(attention_weights * x_flat, dim=2)
+        return weighted_sum
+
+
+class TenLayerClassifier(nn.Module):
+    def __init__(self, input_features, num_classes):
+        super(TenLayerClassifier, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(input_features, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(1024, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(256, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(128, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(128, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            
+            nn.Linear(64, num_classes)
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+    
+    
+class SixLayerClassifier(nn.Module):
+    def __init__(self, input_features, num_classes):
+        super(SixLayerClassifier, self).__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(input_features, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            
+            nn.Linear(1024, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            
+            nn.Linear(1024, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            
+            nn.Linear(512, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.3),
+            
+            nn.Linear(256, num_classes)
+        )
+
+    def forward(self, x):
+        return self.layers(x)
+
 
 class EnhancedClassifier(nn.Module):
     def __init__(self, input_features, num_classes):
@@ -104,13 +208,12 @@ class SEBlock(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        # Determine if the input is 4D or 5D
-        if len(x.size()) == 4:  # For 2D inputs (batch, channel, height, width)
+        if len(x.size()) == 4:
             b, c, _, _ = x.size()
-            y = torch.mean(x, (2, 3))  # Global average pooling
-        elif len(x.size()) == 5:  # For 3D inputs (batch, channel, depth, height, width)
+            y = torch.mean(x, (2, 3))
+        elif len(x.size()) == 5:
             b, c, _, _, _ = x.size()
-            y = torch.mean(x, (2, 3, 4))  # Global average pooling for 3D
+            y = torch.mean(x, (2, 3, 4))  
 
         y = self.relu(self.fc1(y))
         y = self.sigmoid(self.fc2(y))
@@ -579,17 +682,36 @@ class CustomUNet(SegmentationNetwork):
             # self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
 #             self.classifier = EnhancedClassifier(input_features=320, num_classes=self.classification_classes)
             
-            self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-            self.resnet = models.resnet18(pretrained=True)
-            num_ftrs = self.resnet.fc.in_features
-            self.resnet.fc = nn.Linear(340, self.classification_classes)
+#             self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
+#             self.resnet = models.resnet18(pretrained=True)
+#             num_ftrs = self.resnet.fc.in_features
+#             self.resnet.fc = nn.Linear(340, self.classification_classes)
            
-            for param in self.resnet.parameters():
-                param.requires_grad = False
+#             for param in self.resnet.parameters():
+#                 param.requires_grad = False
                 
-            for param in self.resnet.fc.parameters():
-                param.requires_grad = True
+#             for param in self.resnet.fc.parameters():
+#                 param.requires_grad = True
 
+
+            ##### GLOBAL ATTENTION POOL #####
+            self.global_attention_pool = True
+            self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+            self.attention_pooling = AttentionPooling(input_channels=1572864)
+            self.classifier = SixLayerClassifier(input_features=1312, num_classes=self.classification_classes)
+        
+        
+        
+            ##### CLASSIFY HYBRID #####
+            self.classify_hybrid = False
+            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+            # self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
+            
+            
+            ##### CLASSIFY UPSAMPLE #####
+            self.classify_upsample = False
+            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+            # self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
             
 
     def forward(self, x):
@@ -603,6 +725,7 @@ class CustomUNet(SegmentationNetwork):
 
         # Bottleneck layer
         bottleneck_features = self.conv_blocks_context[-1](x)
+        upsample_features = []
 
         # Segmentation pathway
         x = bottleneck_features
@@ -611,6 +734,8 @@ class CustomUNet(SegmentationNetwork):
             x = torch.cat((x, skips[-(u + 1)]), dim=1)
             x = self.conv_blocks_localization[u](x)
             seg_outputs.append(self.final_nonlin(self.seg_outputs[u](x)))
+            
+            upsample_features.append(x)
 
         if self._deep_supervision and self.do_ds:
             seg_output = tuple([seg_outputs[-1]] + [i(j) for i, j in
@@ -618,34 +743,57 @@ class CustomUNet(SegmentationNetwork):
         else:
             seg_output = seg_outputs[-1]
 
-        # Classification pathway
+        # Classification pathways
         if self.classification_classes:
             if hasattr(self, 'resnet'):
                 class_features = self.global_avg_pool(bottleneck_features)
                 lass_features = torch.flatten(class_features, 1)
+                class_features = class_features.squeeze()
                 class_output = self.resnet(class_features)
                 return seg_output, class_output   
             elif hasattr(self, 'spatial_attention'):
-                # Apply SE block
                 class_features = self.se_block(bottleneck_features)
-                # Apply spatial attention
                 class_features = class_features * self.spatial_attention(class_features)
-                # print(f"class_features (before pooling): {class_features.shape}")
-                # Global Average Pooling
                 class_features = self.global_avg_pool(class_features)
-                # print(f"class_features (after pooling): {class_features.shape}")
                 class_features = torch.flatten(class_features, 1)
-                # Fully connected layers
+ 
                 class_output = F.relu(self.fc1(class_features))
                 class_output = F.dropout(class_output, p=0.5)
                 class_output = F.relu(self.fc2(class_output))
                 class_output = F.dropout(class_output, p=0.5)
                 class_output = self.fc3(class_output)
                 return seg_output, class_output
+            elif self.classify_upsample:
+                upsample_features = torch.cat(upsample_features, dim=1) 
+                class_features = F.adaptive_avg_pool2d(upsample_features, (1, 1))
+                class_features = torch.flatten(class_features, 1)
+                class_output = self.classifier(class_features)
+                return seg_output, class_output
+            elif self.classify_hybrid:
+                bottleneck_pooled = F.adaptive_avg_pool2d(bottleneck_features, (1, 1))
+                bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
+
+                upsample_features = torch.cat(upsample_features, dim=1)  # Example of concatenation
+                upsample_pooled = F.adaptive_avg_pool2d(upsample_features, (1, 1))
+                upsample_pooled = torch.flatten(upsample_pooled, 1)
+
+                combined_features = torch.cat([bottleneck_pooled, upsample_pooled], dim=1)
+
+                class_output = self.classifier(combined_features)
+                return seg_output, class_output
+            elif self.global_attention_pool:
+                bottleneck_pooled = self.global_avg_pool(bottleneck_features)
+                bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
+
+                last_upsample_feature = upsample_features[-1] 
+                attention_pooled = self.attention_pooling(last_upsample_feature)
+
+                combined_features = torch.cat([bottleneck_pooled, attention_pooled], dim=1)
+
+                class_output = self.classifier(combined_features)
+                return seg_output, class_output
             else:
-                # class_features = self.global_avg_pool(bottleneck_features)
-                # class_features = torch.flatten(class_features, 1)
-                # class_output = self.classifier(class_features)
+
                 class_features = self.global_avg_pool(bottleneck_features)
                 class_features = torch.flatten(class_features, 1)
                 class_output = self.classifier(class_features)

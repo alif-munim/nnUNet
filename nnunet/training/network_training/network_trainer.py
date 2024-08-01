@@ -232,10 +232,6 @@ class NetworkTrainer(object):
             
             if len(self.all_val_class_acc) == len(x_values):
                 ax2.plot(x_values, self.all_val_class_acc, color='b', ls='--', dashes=(5, 5), label="class_acc")
-                
-            # self.print_to_log_file(f"x_values: {x_values}")
-            # self.print_to_log_file(f"self.all_val_eval_metrics (plot_progress): {self.all_val_eval_metrics}")
-            # self.print_to_log_file(f"self.all_val_class_acc (plot_progress): {self.all_val_class_acc}")
 
             ax.set_xlabel("epoch")
             ax.set_ylabel("loss")
@@ -504,26 +500,6 @@ class NetworkTrainer(object):
                 self.all_tr_losses.append(np.mean(train_losses_epoch))
                 self.print_to_log_file("overall train loss : %.4f" % self.all_tr_losses[-1])
 
-#             with torch.no_grad():
-#                 # validation with train=False
-#                 self.network.eval()
-#                 val_losses = []
-#                 for b in range(self.num_val_batches_per_epoch):
-#                     l = self.run_iteration(self.val_gen, False, True)
-#                     val_losses.append(l)
-#                 self.all_val_losses.append(np.mean(val_losses))
-#                 self.print_to_log_file("validation loss: %.4f" % self.all_val_losses[-1])
-
-#                 if self.also_val_in_tr_mode:
-#                     self.network.train()
-#                     # validation with train=True
-#                     val_losses = []
-#                     for b in range(self.num_val_batches_per_epoch):
-#                         l = self.run_iteration(self.val_gen, False)
-#                         val_losses.append(l)
-#                     self.all_val_losses_tr_mode.append(np.mean(val_losses))
-#                     self.print_to_log_file("validation loss (train=True): %.4f" % self.all_val_losses_tr_mode[-1])
-
             with torch.no_grad():
                 # validation with train=False
                 if self.use_valid_progress_bar:
@@ -550,12 +526,6 @@ class NetworkTrainer(object):
                         
                         self.all_val_losses.append(np.mean(val_losses))
                         self.print_to_log_file("overall validation loss: %.4f" % self.all_val_losses[-1])
-                            
-                    # for b in range(self.num_val_batches_per_epoch):
-                    #     l = self.run_iteration(self.val_gen, False, True)
-                    #     val_losses.append(l)
-                    # self.all_val_losses.append(np.mean(val_losses))
-                    # self.print_to_log_file("validation loss: %.4f" % self.all_val_losses[-1])
 
                     if self.also_val_in_tr_mode:
                         self.network.train()
@@ -581,12 +551,7 @@ class NetworkTrainer(object):
                             
                             self.all_val_losses.append(np.mean(val_losses))
                             self.print_to_log_file("overall validation loss: %.4f" % self.all_val_losses[-1])
-                                
-                    # for b in range(self.num_val_batches_per_epoch):
-                    #     l = self.run_iteration(self.val_gen, False)
-                    #     val_losses.append(l)
-                    # self.all_val_losses_tr_mode.append(np.mean(val_losses))
-                    # self.print_to_log_file("validation loss (train=True): %.4f" % self.all_val_losses_tr_mode[-1])
+
                 else:
                     self.network.eval()
                     val_losses = []

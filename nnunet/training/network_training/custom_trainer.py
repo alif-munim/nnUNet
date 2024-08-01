@@ -265,10 +265,6 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         target = data_dict['target']
         class_labels = np.array(data_dict['classification_labels'])
         
-        # print(f"""
-        #     class_labels: {class_labels}
-        #     type: {type(class_labels)}
-        # """)
 
         data = maybe_to_torch(data)
         target = maybe_to_torch(target)
@@ -280,29 +276,25 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             class_labels = to_cuda(class_labels.long())
 
         self.optimizer.zero_grad()
+        
+        seg_weight = 0.35
 
         if self.custom_unet:
-            # Assuming target is a tuple of (segmentation, classification) targets
             seg_target = target
-            # class_target = torch.Tensor([1,0]).long().cuda()
             seg_output, class_output = self.network(data)
-            seg_loss = self.segmentation_loss(seg_output, seg_target)
-            # class_loss = self.classification_loss(class_output, class_target)
-            class_loss = self.classification_loss(class_output, class_labels)
             
-            loss = seg_loss + class_loss
-            # print(f"run_iteration: Shape of seg_output: {seg_output.shape}")
-            # print(f"run_iteration 1: Shape of class_output: {class_output.shape}")
-            # print(f"run_iteration 1: Shape of class_target: {class_target.shape}")
-            # print(f"seg_loss: {seg_loss} | class_loss: {class_loss}")
+            seg_loss = self.segmentation_loss(seg_output, seg_target)
+            class_loss = self.classification_loss(class_output, class_labels)
+            loss = seg_weight * seg_loss + (1 - seg_weight) * class_loss
+
             del data
         else:
-            # Single output and target for segmentation
+
             seg_target = target
             seg_output = self.network(data)
             seg_loss = self.segmentation_loss(seg_output, seg_target)
             
-            loss = seg_loss
+            loss = seg_weight * seg_loss + (1 - seg_weight) * class_loss
             del data
 
         if do_backprop:
@@ -312,13 +304,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         if run_online_evaluation:
             if self.custom_unet:
-                # print(f"run_iteration 2: Shape of class_output: {class_output.shape}")
-                # print(f"run_iteration 2: Shape of class_target: {class_target.shape}")
-                # CALL RUN_ONLINE_EVALUATION WITH SEG_OUTPUT, CLASS_OUTPUT, SEG_TARGET, AND CLASS_TARGET
-                # self.run_online_evaluation(seg_output, class_output, seg_target, class_target)
-                
                 self.run_online_evaluation(seg_output, class_output, seg_target, class_labels)
-                # self.run_online_evaluation(seg_output, seg_target)
+
             else:
                 self.run_online_evaluation(seg_output, seg_target)
 
