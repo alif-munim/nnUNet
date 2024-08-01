@@ -36,6 +36,9 @@ from torch.cuda.amp import autocast
 from nnunet.training.learning_rate.poly_lr import poly_lr
 from batchgenerators.utilities.file_and_folder_operations import *
 
+from sklearn.utils.class_weight import compute_class_weight
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 
 class nnUNetTrainerV2_Custom(nnUNetTrainer):
     """
@@ -47,7 +50,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
-        self.initial_lr = 1e-2
+        self.initial_lr = 1e-3
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
@@ -55,6 +58,13 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         
         self.custom_unet = True
         self.eval_only = False
+        
+        self.use_seg_weight = False
+        self.seg_weight = 0.2
+        
+        with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
+            self.class_mapping = json.load(f)
+            self.class_mapping = {key.replace('_0000.nii.gz','.npz'):value for key, value in self.class_mapping.items()}
         
         
         print(f"""
@@ -102,7 +112,11 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             self.ds_loss_weights = weights
             # now wrap the loss
             self.segmentation_loss = MultipleOutputLoss2(self.loss, self.ds_loss_weights)
-            self.classification_loss = nn.CrossEntropyLoss()
+            
+            y = list(self.class_mapping.values())
+            class_weights = compute_class_weight('balanced', classes=np.unique(y), y=y)
+            class_weights = torch.FloatTensor(class_weights).cuda()
+            self.classification_loss = nn.CrossEntropyLoss(weight=class_weights)
             
             ################# END ###################
 
@@ -186,12 +200,47 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         if torch.cuda.is_available():
             self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
+        
+        
+    def get_parameter_groups(self):
+        classification_params = []
+        other_params = []
+        for name, param in self.network.named_parameters():
+            if 'classification_head' in name:  # Adjust this based on your actual naming
+                classification_params.append(param)
+            else:
+                other_params.append(param)
 
+        print(f"Number of classification parameters: {len(classification_params)}")
+        print(f"Number of other parameters: {len(other_params)}")
+
+        return classification_params, other_params
+    
+    # def initialize_optimizer_and_scheduler(self):
+    #     assert self.network is not None, "self.initialize_network must be called first"
+    #     self.optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
+    #                                      momentum=0.99, nesterov=True)
+    #     self.lr_scheduler = None
+    
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
-        self.optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
-                                         momentum=0.99, nesterov=True)
-        self.lr_scheduler = None
+    
+        classification_params, other_params = self.get_parameter_groups()
+
+        param_groups = []
+        if other_params:
+            param_groups.append({'params': other_params})
+        if classification_params:
+            param_groups.append({'params': classification_params, 'lr': self.initial_lr * 10})
+
+        if not param_groups:
+            raise ValueError("No parameters to optimize!")
+
+        self.optimizer = torch.optim.Adam(param_groups, lr=self.initial_lr, weight_decay=self.weight_decay)
+
+        self.lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode='min', factor=0.1, patience=10, verbose=True
+        )
 
     # def run_online_evaluation(self, seg_output, seg_target):
     #     """
@@ -264,6 +313,17 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         data = data_dict['data']
         target = data_dict['target']
         class_labels = np.array(data_dict['classification_labels'])
+        cases = data_dict['cases']
+        
+        # To verify the dataloader class labels align with true labels
+        print(f"""
+            DATALOADER
+            cases: {cases}
+            class_labels: {class_labels}
+        """)
+        
+        for case_id in cases:
+            print(f"""TRUTH -> {case_id}: {self.class_mapping[case_id]}""")
         
 
         data = maybe_to_torch(data)
@@ -277,15 +337,21 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         self.optimizer.zero_grad()
         
-        seg_weight = 0.35
+        
 
         if self.custom_unet:
             seg_target = target
             seg_output, class_output = self.network(data)
             
+            print(f"""PRED -> {torch.argmax(class_output, dim=1)}""")
+            
             seg_loss = self.segmentation_loss(seg_output, seg_target)
             class_loss = self.classification_loss(class_output, class_labels)
-            loss = seg_weight * seg_loss + (1 - seg_weight) * class_loss
+            
+            if self.use_seg_weight:
+                loss = seg_weight * seg_loss + (1 - seg_weight) * class_loss
+            else:
+                loss = seg_loss + class_loss
 
             del data
         else:
@@ -294,7 +360,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             seg_output = self.network(data)
             seg_loss = self.segmentation_loss(seg_output, seg_target)
             
-            loss = seg_weight * seg_loss + (1 - seg_weight) * class_loss
+            loss = seg_loss
             del data
 
         if do_backprop:
@@ -448,8 +514,22 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             ep = self.epoch + 1
         else:
             ep = epoch
-        self.optimizer.param_groups[0]['lr'] = poly_lr(ep, self.max_num_epochs, self.initial_lr, 0.9)
-        self.print_to_log_file("lr:", np.round(self.optimizer.param_groups[0]['lr'], decimals=6))
+
+        base_lr = poly_lr(ep, self.max_num_epochs, self.initial_lr, 0.9)
+        classification_lr = base_lr * 1  # Keep the 10x factor
+
+        for param_group in self.optimizer.param_groups:
+            if 'classification_head' in str(param_group['params'][0].shape):
+                param_group['lr'] = classification_lr
+            else:
+                param_group['lr'] = base_lr
+
+        self.print_to_log_file("Base lr:", np.round(base_lr, decimals=6))
+        self.print_to_log_file("Classification lr:", np.round(classification_lr, decimals=6))
+        
+    def print_current_lr(self):
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            self.print_to_log_file(f"Learning rate for group {i}: {param_group['lr']}")
 
     def on_epoch_end(self):
         """

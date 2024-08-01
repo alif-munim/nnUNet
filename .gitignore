@@ -5,6 +5,7 @@ nnUNet_raw_data_base/
 nnUNet_trained_models/
 original_data/
 data_preprocessing_backup.ipynb
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

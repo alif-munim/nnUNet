@@ -713,6 +713,8 @@ class CustomUNet(SegmentationNetwork):
             # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
             # self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
             
+            self.inference_mode = False
+            
 
     def forward(self, x):
         skips = []
@@ -742,64 +744,68 @@ class CustomUNet(SegmentationNetwork):
                                                     zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
         else:
             seg_output = seg_outputs[-1]
-
-        # Classification pathways
-        if self.classification_classes:
-            if hasattr(self, 'resnet'):
-                class_features = self.global_avg_pool(bottleneck_features)
-                lass_features = torch.flatten(class_features, 1)
-                class_features = class_features.squeeze()
-                class_output = self.resnet(class_features)
-                return seg_output, class_output   
-            elif hasattr(self, 'spatial_attention'):
-                class_features = self.se_block(bottleneck_features)
-                class_features = class_features * self.spatial_attention(class_features)
-                class_features = self.global_avg_pool(class_features)
-                class_features = torch.flatten(class_features, 1)
- 
-                class_output = F.relu(self.fc1(class_features))
-                class_output = F.dropout(class_output, p=0.5)
-                class_output = F.relu(self.fc2(class_output))
-                class_output = F.dropout(class_output, p=0.5)
-                class_output = self.fc3(class_output)
-                return seg_output, class_output
-            elif self.classify_upsample:
-                upsample_features = torch.cat(upsample_features, dim=1) 
-                class_features = F.adaptive_avg_pool2d(upsample_features, (1, 1))
-                class_features = torch.flatten(class_features, 1)
-                class_output = self.classifier(class_features)
-                return seg_output, class_output
-            elif self.classify_hybrid:
-                bottleneck_pooled = F.adaptive_avg_pool2d(bottleneck_features, (1, 1))
-                bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
-
-                upsample_features = torch.cat(upsample_features, dim=1)  # Example of concatenation
-                upsample_pooled = F.adaptive_avg_pool2d(upsample_features, (1, 1))
-                upsample_pooled = torch.flatten(upsample_pooled, 1)
-
-                combined_features = torch.cat([bottleneck_pooled, upsample_pooled], dim=1)
-
-                class_output = self.classifier(combined_features)
-                return seg_output, class_output
-            elif self.global_attention_pool:
-                bottleneck_pooled = self.global_avg_pool(bottleneck_features)
-                bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
-
-                last_upsample_feature = upsample_features[-1] 
-                attention_pooled = self.attention_pooling(last_upsample_feature)
-
-                combined_features = torch.cat([bottleneck_pooled, attention_pooled], dim=1)
-
-                class_output = self.classifier(combined_features)
-                return seg_output, class_output
-            else:
-
-                class_features = self.global_avg_pool(bottleneck_features)
-                class_features = torch.flatten(class_features, 1)
-                class_output = self.classifier(class_features)
-                return seg_output, class_output
-        else:
+            
+        if self.inference_mode:
             return seg_output
+        else:
+
+            # Classification pathways
+            if self.classification_classes:
+                if hasattr(self, 'resnet'):
+                    class_features = self.global_avg_pool(bottleneck_features)
+                    lass_features = torch.flatten(class_features, 1)
+                    class_features = class_features.squeeze()
+                    class_output = self.resnet(class_features)
+                    return seg_output, class_output   
+                elif hasattr(self, 'spatial_attention'):
+                    class_features = self.se_block(bottleneck_features)
+                    class_features = class_features * self.spatial_attention(class_features)
+                    class_features = self.global_avg_pool(class_features)
+                    class_features = torch.flatten(class_features, 1)
+
+                    class_output = F.relu(self.fc1(class_features))
+                    class_output = F.dropout(class_output, p=0.5)
+                    class_output = F.relu(self.fc2(class_output))
+                    class_output = F.dropout(class_output, p=0.5)
+                    class_output = self.fc3(class_output)
+                    return seg_output, class_output
+                elif self.classify_upsample:
+                    upsample_features = torch.cat(upsample_features, dim=1) 
+                    class_features = F.adaptive_avg_pool2d(upsample_features, (1, 1))
+                    class_features = torch.flatten(class_features, 1)
+                    class_output = self.classifier(class_features)
+                    return seg_output, class_output
+                elif self.classify_hybrid:
+                    bottleneck_pooled = F.adaptive_avg_pool2d(bottleneck_features, (1, 1))
+                    bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
+
+                    upsample_features = torch.cat(upsample_features, dim=1)  # Example of concatenation
+                    upsample_pooled = F.adaptive_avg_pool2d(upsample_features, (1, 1))
+                    upsample_pooled = torch.flatten(upsample_pooled, 1)
+
+                    combined_features = torch.cat([bottleneck_pooled, upsample_pooled], dim=1)
+
+                    class_output = self.classifier(combined_features)
+                    return seg_output, class_output
+                elif self.global_attention_pool:
+                    bottleneck_pooled = self.global_avg_pool(bottleneck_features)
+                    bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
+
+                    last_upsample_feature = upsample_features[-1] 
+                    attention_pooled = self.attention_pooling(last_upsample_feature)
+
+                    combined_features = torch.cat([bottleneck_pooled, attention_pooled], dim=1)
+
+                    class_output = self.classifier(combined_features)
+                    return seg_output, class_output
+                else:
+
+                    class_features = self.global_avg_pool(bottleneck_features)
+                    class_features = torch.flatten(class_features, 1)
+                    class_output = self.classifier(class_features)
+                    return seg_output, class_output
+            else:
+                return seg_output
 
     @staticmethod
     def compute_approx_vram_consumption(patch_size, num_pool_per_axis, base_num_features, max_num_features,

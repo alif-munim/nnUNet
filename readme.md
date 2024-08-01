@@ -146,19 +146,18 @@ nnUNet_train 3d_fullres nnUNetTrainerV2_Custom Task006_PancreasUHN 0
 
 For inference on the validation set, run the following:
 ```
-nnUNet_predict -i "nnUNet/original_data/pancreas_validation/images" -o "nnUNet/original_data/pancreas_validation_preds" -d 6 -c 3d_fullres
+nnUNet_predict -i "original_data/pancreas_validation/images" -o "original_data/pancreas_validation_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28
 ```
 
 For inference on the test set, run the following:
 ```
-nnUNet_predict -i "nnUNet/original_data/pancreas_test/images" -o "nnUNet/original_data/pancreas_test_preds" -d 6 -c 3d_fullres
+nnUNet_predict -i "nnUNet/original_data/pancreas_test/images" -o "nnUNet/original_data/pancreas_test_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28
 ```
 
 The data is prepared for predictions and visualized in [prediction.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/prediction.ipynb).
 
-
 ### Evaluation
 
 ```
-nnUNet_evaluate_folder -ref "nnUNet/original_data/pancreas_validation/labels"  -pred "nnUNet/original_data/pancreas_validation_preds" 
+nnUNet_evaluate_folder -ref "original_data/pancreas_validation/labels"  -pred "original_data/pancreas_validation_preds" -l 0 1 2
 ```

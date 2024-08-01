@@ -460,6 +460,7 @@ class DataLoader3D(SlimDataLoaderBase):
         seg = np.zeros(self.seg_shape, dtype=np.float32)
         case_properties = []
         classification_labels = []
+        cases = []
         for j, i in enumerate(selected_keys):
             # oversampling foreground will improve stability of model training, especially if many patches are empty
             # (Lung for example)
@@ -615,8 +616,9 @@ class DataLoader3D(SlimDataLoaderBase):
             case_id = os.path.basename(self._data[i]['data_file'])
             classification_label = self.class_mapping[case_id]
             classification_labels.append(classification_label)
+            cases.append(case_id)
 
-        return {'data': data, 'seg': seg, 'properties': case_properties, 'keys': selected_keys, 'classification_labels': classification_labels}
+        return {'data': data, 'seg': seg, 'properties': case_properties, 'keys': selected_keys, 'classification_labels': classification_labels, 'cases': cases}
 
 
 class DataLoader2D(SlimDataLoaderBase):
@@ -665,7 +667,7 @@ class DataLoader2D(SlimDataLoaderBase):
             self.need_to_pad += pad_sides
         self.pad_sides = pad_sides
         self.data_shape, self.seg_shape = self.determine_shapes()
-        with open('/scratch/alif/nnUNet/original_data/Task06_PancreasUHN/class_mapping.json', 'r') as f:
+        with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
             self.class_mapping = {key.replace('_0000.nii.gz','.npz'):value for key, value in self.class_mapping.items()}
 
@@ -693,6 +695,7 @@ class DataLoader2D(SlimDataLoaderBase):
 
         case_properties = []
         classification_labels = []
+        cases = []
         
         for j, i in enumerate(selected_keys):
             if 'properties' in self._data[i].keys():
