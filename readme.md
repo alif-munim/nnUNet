@@ -6,14 +6,21 @@ This repository is a fork of [MIC-DKFZ/nnUNet](https://github.com/MIC-DKFZ/nnUNe
 
 An additional classification decoder head is added to the original architecture, taking as input the bottleneck features from the shared segmentation encoder (contraction pathway). 
 
-The following classes are added:
-1. `CustomUNet` - located in `custom_unet.py`
-2. `nnUNetTrainerV2_Custom` - located in `custom_trainer.py`
+The following classes have been added:
+1. `CustomUNet`: Modifies the original generic u-net architecture with classification heads of various configurations. Located in [custom_unet.py](https://github.com/alif-munim/nnUNet/blob/classification/nnunet/network_architecture/custom_unet.py).
+2. `nnUNetTrainerV2_Custom`: Combines segmentation and classification losses for training. Located in [custom_trainer.py](https://github.com/alif-munim/nnUNet/blob/classification/nnunet/training/network_training/custom_trainer.py).
 
 
 ### Experiments
 
-Alongside the dice loss in the original setup, cross-entropy loss is used for the classification head. Various architectures are tested to find the ideal configuration.
+Alongside the dice loss in the original setup, cross-entropy loss is used for the classification head. Various architectures are tested to find the ideal configuration. The experiments / configurations can be divided into the following categories:
+
+1. Network depth. Tested networks with 2, 4, 5, 6, and 10 layers.
+2. Batch normalization. To increase training stability.
+3. Features. Feeding the classifier features from the u-net bottleneck, or later upsampling layers. Also combining both for local and global feature capture.
+4. Pooling. Global average and attention.
+5. Dropout. Set to 0.5 in most cases, but final experiment is set to 0.3.
+6. Loss weighting. Assigning higher weight to classification loss for better performance.
 
 
 ### Results
@@ -50,6 +57,7 @@ export RESULTS_FOLDER="nnUNet/nnUNet_trained_models"
 
 The dataset consists of 360 de-identified 3D pancreas CT scans from the University Health Network (UHN).
 
+```
 Train/
 ├── subtype0/
 │   ├── quiz_0_041.nii.gz # Mask (0-background; 1-pancreas; 2-lesion)
@@ -59,7 +67,9 @@ Train/
 │   ├── ...
 ├── subtype2/
 │   ├── ...
+```
 
+```
 Validation/
 ├── subtype0/
 │   ├── quiz_0_168.nii.gz # Mask (0-background; 1-pancreas; 2-lesion)
@@ -69,15 +79,19 @@ Validation/
 │   ├── ...
 ├── subtype2/
 │   ├── ...
+```
 
+```
 Test/
 ├── quiz_037_0000.nii.gz # Image
 ├── quiz_045_0000.nii.gz # Image
 ├── quiz_047_0000.nii.gz # Image
 ├── ...
+```
 
 To be compatible with nnU-Net, the directory structure is reformatted as follows:
 
+```
 Task006_PancreasUHN/
 ├── dataset.json
 ├── class_mapping.json
@@ -93,6 +107,7 @@ Task006_PancreasUHN/
     ├── case_001.nii.gz
     ├── case_002.nii.gz
     ├── ...
+```
 
 Where `dataset.json` contains the train and test cases, and `class_mapping.json` maps each case to a subtype (0, 1, or 2) as a classification label.
 
