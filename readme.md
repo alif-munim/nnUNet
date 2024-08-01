@@ -33,7 +33,7 @@ The Metrics Reloaded framework was used to determine a more comprehensive suite 
 To install the modified nnU-Net, clone the repository, checkout the classification branch, and install in editable mode.
 
 ```
-git clone git@github.com:alif-munim/nnUNet.git
+git clone https://github.com/alif-munim/nnUNet.git
 cd nnUNet
 git checkout classification
 pip install -e .
@@ -114,7 +114,9 @@ Where `dataset.json` contains the train and test cases, and `class_mapping.json`
 
 ### Preprocessing
 
-The dataset must be moved to `nnUNet/nnUNet_raw_data_base/nnUNet_raw_data` and the folder must be named in the format `TaskXXX_Dataset`.
+Most of the preprocessing for the dataset is done in [pancreas.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/pancreas.ipynb). A custom dataset split is created in [splits.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/splits.ipynb). To preserve the original training and validation split, since nnU-Net uses k-fold cross validation by default.
+
+Once processed, the dataset must be moved to `nnUNet/nnUNet_raw_data_base/nnUNet_raw_data` and the folder must be named in the format `TaskXXX_Dataset`.
 
 Then, we must verify the cases and their label alignment with the following command.
 
@@ -127,6 +129,9 @@ After verification, we can run the full planning and preprocessing for image nor
 ```
 nnUNet_plan_and_preprocess -t 006
 ```
+
+The [hippocampus.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/hippocampus.ipynb) notebook is a general reference / practice file for planning and preprocessing.
+
 
 ### Training
 
@@ -148,6 +153,8 @@ For inference on the test set, run the following:
 ```
 nnUNet_predict -i "nnUNet/original_data/pancreas_test/images" -o "nnUNet/original_data/pancreas_test_preds" -d 6 -c 3d_fullres
 ```
+
+The data is prepared for predictions and visualized in [prediction.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/prediction.ipynb).
 
 
 ### Evaluation
