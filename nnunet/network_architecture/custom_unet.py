@@ -452,6 +452,9 @@ class CustomUNet(SegmentationNetwork):
         self.final_nonlin = final_nonlin
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
+        
+        self.classify_all_features = False
+        self.inference_mode = False
 
         if conv_op == nn.Conv2d:
             upsample_mode = 'bilinear'
@@ -668,13 +671,38 @@ class CustomUNet(SegmentationNetwork):
                 self.conv_blocks_classification = nn.ModuleList(self.conv_blocks_classification)
                 self.classification_tu = nn.ModuleList(self.classification_tu)
                 
-                # Final classification layer
-                self.classification_final = nn.Sequential(
-                    nn.Linear(3, 64),  # 3 is the number of classes/channels
-                    nn.ReLU(inplace=True),
-                    nn.Dropout(p=0.5),
-                    nn.Linear(64, self.classification_classes)
-                )
+                if self.classify_all_features:
+                    self.classification_final = nn.Sequential(
+                        nn.Linear(1920, 1024),  # Adjust input size
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(1024, 512),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(512, 256),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(256, 128),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(128, self.classification_classes)
+                    )
+                else:
+                    self.classification_final = nn.Sequential(
+                        nn.Linear(3, 512),  # 3 is the number of classes/channels
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(512, 256),  
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(256, 128),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(128, 64),
+                        nn.ReLU(inplace=True),
+                        nn.Dropout(p=0.5),
+                        nn.Linear(64, self.classification_classes)
+                    )
                 
                 
             
@@ -701,9 +729,7 @@ class CustomUNet(SegmentationNetwork):
             if self.classify_upsample:
                 self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
                 self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
-            
-            self.inference_mode = False
-            
+                      
             
             
             ##### LOCALIZATION & REGISTER #####
@@ -739,17 +765,24 @@ class CustomUNet(SegmentationNetwork):
                 # self.apply(print_module_training_status)
             
 
+    def global_avg_pool(self, x):
+                return F.adaptive_avg_pool3d(x, (1, 1, 1)).view(x.size(0), -1)
+            
     def forward(self, x):
         skips = []
         seg_outputs = []
+        classification_features = []
+        
         for d in range(len(self.conv_blocks_context) - 1):
             x = self.conv_blocks_context[d](x)
             skips.append(x)
+            classification_features.append(self.global_avg_pool(x))
             if not self.convolutional_pooling:
                 x = self.td[d](x)
 
         # Bottleneck layer
         bottleneck_features = self.conv_blocks_context[-1](x)
+        classification_features.append(self.global_avg_pool(bottleneck_features))
         upsample_features = []
 
         # Segmentation pathway
@@ -783,6 +816,7 @@ class CustomUNet(SegmentationNetwork):
                         x = torch.cat((x, skips[-(u + 1)]), dim=1)
                         x = self.conv_blocks_classification[u](x)
                         class_outputs.append(self.final_nonlin(self.class_outputs[u](x)))
+                        classification_features.append(self.global_avg_pool(x))
 
                     if self._deep_supervision and self.do_ds:
                         class_output = tuple([class_outputs[-1]] + [i(j) for i, j in
@@ -790,20 +824,15 @@ class CustomUNet(SegmentationNetwork):
                     else:
                         class_output = class_outputs[-1]
                     
-                    # for i, output in enumerate(seg_output):
-                    #     print(f"seg_output[{i}]: {seg_output[i].shape}")
-                        
-                    # for i, output in enumerate(class_output):
-                    #     print(f"class_output[{i}]: {class_output[i].shape}")
- 
-                    # Layers are initialized randomly, so outputs will not be equal
-                    # print(f"Outputs are equal: {torch.equal(seg_output[0],class_output[0])}")
+                    if self.classify_all_features: 
+                        # When using encoder + bottleneck + decoder
+                        class_features = torch.cat(classification_features, dim=1)
+                    else:
+                        # When only using last layer
+                        class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
                     
-                    # class_logits = self.classification_final(class_output[0])
-                    class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
                     class_logits = self.classification_final(class_features)
-                    # print(f"class_logits (after linear): {class_logits.shape}")
-                        
+
                     return seg_output, class_logits
                 if self.classify_resnet and hasattr(self, 'resnet'):
                     class_features = self.global_avg_pool(bottleneck_features)
