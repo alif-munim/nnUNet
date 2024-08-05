@@ -493,6 +493,10 @@ class CustomUNet(SegmentationNetwork):
         self.td = []
         self.tu = []
         self.seg_outputs = []
+        
+        self.conv_blocks_classification = []
+        self.classification_tu = []
+        self.class_outputs = []
 
         output_features = base_num_features
         input_features = input_channels
@@ -580,36 +584,6 @@ class CustomUNet(SegmentationNetwork):
                                   self.norm_op, self.norm_op_kwargs, self.dropout_op, self.dropout_op_kwargs,
                                   self.nonlin, self.nonlin_kwargs, basic_block=basic_block)
             ))
-
-        for ds in range(len(self.conv_blocks_localization)):
-            self.seg_outputs.append(conv_op(self.conv_blocks_localization[ds][-1].output_channels, num_classes,
-                                            1, 1, 0, 1, 1, seg_output_use_bias))
-
-        self.upscale_logits_ops = []
-        cum_upsample = np.cumprod(np.vstack(pool_op_kernel_sizes), axis=0)[::-1]
-        for usl in range(num_pool - 1):
-            if self.upscale_logits:
-                self.upscale_logits_ops.append(Upsample(scale_factor=tuple([int(i) for i in cum_upsample[usl + 1]]),
-                                                        mode=upsample_mode))
-            else:
-                self.upscale_logits_ops.append(lambda x: x)
-
-        if not dropout_in_localization:
-            self.dropout_op_kwargs['p'] = old_dropout_p
-
-        # register all modules properly
-        self.conv_blocks_localization = nn.ModuleList(self.conv_blocks_localization)
-        self.conv_blocks_context = nn.ModuleList(self.conv_blocks_context)
-        self.td = nn.ModuleList(self.td)
-        self.tu = nn.ModuleList(self.tu)
-        self.seg_outputs = nn.ModuleList(self.seg_outputs)
-        if self.upscale_logits:
-            self.upscale_logits_ops = nn.ModuleList(
-                self.upscale_logits_ops)  # lambda x:x is not a Module so we need to distinguish here
-
-        if self.weightInitializer is not None:
-            self.apply(self.weightInitializer)
-            # self.apply(print_module_training_status)
             
         self.classification_classes = 3
         bottleneck_size_factor = 1  # Adjust this based on the pooling and feature dimensions
@@ -618,102 +592,151 @@ class CustomUNet(SegmentationNetwork):
             # self.classifier = nn.Linear(1280, self.classification_classes)
             
             # Unstable, up to 40% accuracy
-            # self.classifier = nn.Sequential(
-            #     nn.Linear(1280, 512),
-            #     nn.ReLU(inplace=True),
-            #     nn.Dropout(p=0.5),
-            #     nn.Linear(512, self.classification_classes)
-            # )
+            self.classify_2l = False
+            if self.classify_2l:
+                self.classifier = nn.Sequential(
+                    nn.Linear(1280, 512),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(512, self.classification_classes)
+                )
             
             # Even more unstable
-            # self.classifier = nn.Sequential(
-            #     nn.Linear(1280, 512),
-            #     nn.ReLU(inplace=True),
-            #     nn.Dropout(p=0.5),
-            #     nn.Linear(512, 256),
-            #     nn.ReLU(inplace=True),
-            #     nn.Dropout(p=0.5),
-            #     nn.Linear(256, 128),
-            #     nn.ReLU(inplace=True),
-            #     nn.Dropout(p=0.5),
-            #     nn.Linear(128, self.classification_classes)
-            # )
+            self.classify_4l = False
+            if self.classify_4l:
+                self.classifier = nn.Sequential(
+                    nn.Linear(1280, 512),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(512, 256),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(256, 128),
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(128, self.classification_classes)
+                )
             
-#             self.resnet = models.resnet18(pretrained=True)
-#             num_ftrs = self.resnet.fc.in_features
-#             self.resnet.fc = nn.Identity()
             
-#             self.classifier = nn.Sequential(
-#                 nn.Linear(num_ftrs, 512),
-#                 nn.ReLU(inplace=True),
-#                 nn.Dropout(p=0.5),
-#                 nn.Linear(512, self.classification_classes)
-#             )
 
-            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            # self.global_max_pool = nn.AdaptiveMaxPool2d((1, 1))
-            # self.fc1 = nn.Linear(base_num_features * (2 ** num_pool), 512)
-            # self.fc2 = nn.Linear(512, 256)
-            # self.fc3 = nn.Linear(256, classification_classes)
-            
-            # Attention modules
-            # self.se_block = SEBlock(320)
-            # self.spatial_attention = SpatialAttention()
-            # self.spatial_attention = SpatialAttention3D()
-
-            # Classification head
-            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            # self.fc1 = nn.Linear(base_num_features * (2 ** num_pool), 512)
-            # self.fc2 = nn.Linear(512, 256)
-            # self.fc3 = nn.Linear(256, self.classification_classes)
-            
-            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            # num_fc_input_features = base_num_features * (2 ** num_pool)  # Adjust based on architecture
-            # self.fc1 = nn.Linear(num_fc_input_features, 512)
-            # self.fc3 = nn.Linear(256, self.classification_classes)
-            
-            # self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))  # Using 3D pooling
-            # # num_fc_input_features = base_num_features * (2 ** num_pool)  # Adjust based on architecture
-            # self.fc1 = nn.Linear(320, 512)
-            # self.fc2 = nn.Linear(512, 256)
-            # self.fc3 = nn.Linear(256, self.classification_classes)
-            
-#             num_fc_input_features = base_num_features * (2 ** num_pool)
-            # self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-#             self.classifier = EnhancedClassifier(input_features=320, num_classes=self.classification_classes)
-            
-#             self.global_avg_pool = nn.AdaptiveAvgPool3d((1, 1, 1))
-#             self.resnet = models.resnet18(pretrained=True)
-#             num_ftrs = self.resnet.fc.in_features
-#             self.resnet.fc = nn.Linear(340, self.classification_classes)
-           
-#             for param in self.resnet.parameters():
-#                 param.requires_grad = False
+            ##### CONVOLUTIONAL CLASSIFY #####
+            self.conv_classify = True
+            if self.conv_classify:
                 
-#             for param in self.resnet.fc.parameters():
-#                 param.requires_grad = True
+                if self.convolutional_upsampling:
+                    final_num_features = output_features
+                else:
+                    final_num_features = self.conv_blocks_context[-1].output_channels
+                
+                # now lets build the localization pathway
+                for u in range(num_pool):
+                    nfeatures_from_down = final_num_features
+                    nfeatures_from_skip = self.conv_blocks_context[
+                        -(2 + u)].output_channels  # self.conv_blocks_context[-1] is bottleneck, so start with -2
+                    n_features_after_tu_and_concat = nfeatures_from_skip * 2
 
+                    # the first conv reduces the number of features to match those of skip
+                    # the following convs work on that number of features
+                    # if not convolutional upsampling then the final conv reduces the num of features again
+                    if u != num_pool - 1 and not self.convolutional_upsampling:
+                        final_num_features = self.conv_blocks_context[-(3 + u)].output_channels
+                    else:
+                        final_num_features = nfeatures_from_skip
 
+                    if not self.convolutional_upsampling:
+                        self.classification_tu.append(Upsample(scale_factor=pool_op_kernel_sizes[-(u + 1)], mode=upsample_mode))
+                    else:
+                        self.classification_tu.append(transpconv(nfeatures_from_down, nfeatures_from_skip, pool_op_kernel_sizes[-(u + 1)],
+                                                  pool_op_kernel_sizes[-(u + 1)], bias=False))
+
+                    self.conv_kwargs['kernel_size'] = self.conv_kernel_sizes[- (u + 1)]
+                    self.conv_kwargs['padding'] = self.conv_pad_sizes[- (u + 1)]
+                    self.conv_blocks_classification.append(nn.Sequential(
+                        StackedConvLayers(n_features_after_tu_and_concat, nfeatures_from_skip, num_conv_per_stage - 1,
+                                          self.conv_op, self.conv_kwargs, self.norm_op, self.norm_op_kwargs, self.dropout_op,
+                                          self.dropout_op_kwargs, self.nonlin, self.nonlin_kwargs, basic_block=basic_block),
+                        StackedConvLayers(nfeatures_from_skip, final_num_features, 1, self.conv_op, self.conv_kwargs,
+                                          self.norm_op, self.norm_op_kwargs, self.dropout_op, self.dropout_op_kwargs,
+                                          self.nonlin, self.nonlin_kwargs, basic_block=basic_block)
+                    ))
+                
+                for ds in range(len(self.conv_blocks_classification)):
+                    self.class_outputs.append(conv_op(self.conv_blocks_classification[ds][-1].output_channels, num_classes,
+                                                    1, 1, 0, 1, 1, seg_output_use_bias))
+                    
+                self.class_outputs = nn.ModuleList(self.class_outputs)
+                self.conv_blocks_classification = nn.ModuleList(self.conv_blocks_classification)
+                self.classification_tu = nn.ModuleList(self.classification_tu)
+                
+                # Final classification layer
+                self.classification_final = nn.Sequential(
+                    nn.Linear(3, 64),  # 3 is the number of classes/channels
+                    nn.ReLU(inplace=True),
+                    nn.Dropout(p=0.5),
+                    nn.Linear(64, self.classification_classes)
+                )
+                
+                
+            
+            
+            
             ##### GLOBAL ATTENTION POOL #####
-            self.global_attention_pool = True
-            self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            self.attention_pooling = AttentionPooling(input_channels=1572864)
-            self.classifier = SixLayerClassifier(input_features=1312, num_classes=self.classification_classes)
+            self.global_attention_pool = False
+            if self.global_attention_pool:
+                self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+                self.attention_pooling = AttentionPooling(input_channels=1572864)
+                self.classifier = SixLayerClassifier(input_features=1312, num_classes=self.classification_classes)
         
         
         
             ##### CLASSIFY HYBRID #####
             self.classify_hybrid = False
-            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            # self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
+            if self.classify_hybrid:
+                self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+                self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
             
             
             ##### CLASSIFY UPSAMPLE #####
             self.classify_upsample = False
-            # self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
-            # self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
+            if self.classify_upsample:
+                self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+                self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
             
             self.inference_mode = False
+            
+            
+            
+            ##### LOCALIZATION & REGISTER #####
+            
+            for ds in range(len(self.conv_blocks_localization)):
+                self.seg_outputs.append(conv_op(self.conv_blocks_localization[ds][-1].output_channels, num_classes,
+                                                1, 1, 0, 1, 1, seg_output_use_bias))
+
+            self.upscale_logits_ops = []
+            cum_upsample = np.cumprod(np.vstack(pool_op_kernel_sizes), axis=0)[::-1]
+            for usl in range(num_pool - 1):
+                if self.upscale_logits:
+                    self.upscale_logits_ops.append(Upsample(scale_factor=tuple([int(i) for i in cum_upsample[usl + 1]]),
+                                                            mode=upsample_mode))
+                else:
+                    self.upscale_logits_ops.append(lambda x: x)
+
+            if not dropout_in_localization:
+                self.dropout_op_kwargs['p'] = old_dropout_p
+
+            # register all modules properly
+            self.conv_blocks_localization = nn.ModuleList(self.conv_blocks_localization)
+            self.conv_blocks_context = nn.ModuleList(self.conv_blocks_context)
+            self.td = nn.ModuleList(self.td)
+            self.tu = nn.ModuleList(self.tu)
+            self.seg_outputs = nn.ModuleList(self.seg_outputs)
+            if self.upscale_logits:
+                self.upscale_logits_ops = nn.ModuleList(
+                    self.upscale_logits_ops)  # lambda x:x is not a Module so we need to distinguish here
+
+            if self.weightInitializer is not None:
+                self.apply(self.weightInitializer)
+                # self.apply(print_module_training_status)
             
 
     def forward(self, x):
@@ -751,13 +774,44 @@ class CustomUNet(SegmentationNetwork):
 
             # Classification pathways
             if self.classification_classes:
-                if hasattr(self, 'resnet'):
+                if self.conv_classify:
+                    
+                    class_outputs = []
+                    x = bottleneck_features
+                    for u in range(len(self.classification_tu)):
+                        x = self.classification_tu[u](x)
+                        x = torch.cat((x, skips[-(u + 1)]), dim=1)
+                        x = self.conv_blocks_classification[u](x)
+                        class_outputs.append(self.final_nonlin(self.class_outputs[u](x)))
+
+                    if self._deep_supervision and self.do_ds:
+                        class_output = tuple([class_outputs[-1]] + [i(j) for i, j in
+                                                                zip(list(self.upscale_logits_ops)[::-1], class_outputs[:-1][::-1])])
+                    else:
+                        class_output = class_outputs[-1]
+                    
+                    # for i, output in enumerate(seg_output):
+                    #     print(f"seg_output[{i}]: {seg_output[i].shape}")
+                        
+                    # for i, output in enumerate(class_output):
+                    #     print(f"class_output[{i}]: {class_output[i].shape}")
+ 
+                    # Layers are initialized randomly, so outputs will not be equal
+                    # print(f"Outputs are equal: {torch.equal(seg_output[0],class_output[0])}")
+                    
+                    # class_logits = self.classification_final(class_output[0])
+                    class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
+                    class_logits = self.classification_final(class_features)
+                    # print(f"class_logits (after linear): {class_logits.shape}")
+                        
+                    return seg_output, class_logits
+                if self.classify_resnet and hasattr(self, 'resnet'):
                     class_features = self.global_avg_pool(bottleneck_features)
                     lass_features = torch.flatten(class_features, 1)
                     class_features = class_features.squeeze()
                     class_output = self.resnet(class_features)
                     return seg_output, class_output   
-                elif hasattr(self, 'spatial_attention'):
+                elif self.classify_spatial_attention and hasattr(self, 'spatial_attention'):
                     class_features = self.se_block(bottleneck_features)
                     class_features = class_features * self.spatial_attention(class_features)
                     class_features = self.global_avg_pool(class_features)
