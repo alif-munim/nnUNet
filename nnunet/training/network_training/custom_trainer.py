@@ -72,8 +72,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
-        self.initial_lr = 1e-4
-        self.classification_lr = 3e-3
+        self.initial_lr = 1e-2
+        self.classification_lr = self.initial_lr * 10
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
@@ -83,9 +83,13 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.eval_only = False
         
         self.use_seg_weight = True
-        self.seg_weight = 0.5
+        self.seg_weight = 0.0
         self.use_adam = False
-        self.use_focal_loss = True
+        self.use_focal_loss = False
+        self.grad_clip_value = 100
+        self.weight_decay = 0.0
+        
+        self.batch_size = 1
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
@@ -102,6 +106,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                             Focal Loss: {self.use_focal_loss}
                             Weighted Segmentation Loss ({self.seg_weight}): {self.use_seg_weight}
                             Adam Optimizer: {self.use_adam}
+                        Grad Clipping: {self.grad_clip_value}
                         Only Run Eval: {self.eval_only}
         
         #################################################################
@@ -414,7 +419,11 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         if do_backprop:
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.network.parameters(), 12)
+            torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.grad_clip_value)
+            
+            for name, param in self.network.named_parameters():
+                if param.grad is not None:
+                    print(f"Layer: {name}, Grad norm: {param.grad.norm()}")
             self.optimizer.step()
 
         if run_online_evaluation:
@@ -490,6 +499,10 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         tr_keys.sort()
         val_keys.sort()
+        
+        self.num_batches_per_epoch = len(tr_keys) // self.batch_size
+        self.num_val_batches_per_epoch = len(val_keys) // self.batch_size
+        
         self.dataset_tr = OrderedDict()
         for i in tr_keys:
             self.dataset_tr[i] = self.dataset[i]

@@ -732,12 +732,6 @@ class nnUNetTrainer(NetworkTrainer):
         with torch.no_grad():
             num_classes = output.shape[1]
             
-            # print(f"run_online_evaluation: num_classes: {num_classes}")
-            # print(f"run_online_evaluation: Shape of output: {output.shape}")
-            # print(f"run_online_evaluation: Shape of output_cls: {output_cls.shape}")
-            # print(f"run_online_evaluation: Shape of target: {target.shape}")
-            # print(f"run_online_evaluation: Shape of target_cls: {target_cls.shape}")
-            
             output_softmax = softmax_helper(output)
             output_seg = output_softmax.argmax(1)
             target = target[:, 0]
@@ -759,14 +753,8 @@ class nnUNetTrainer(NetworkTrainer):
             self.online_eval_fp.append(list(fp_hard))
             self.online_eval_fn.append(list(fn_hard))
             
-            # Debugging classification outputs and predictions
-            # print(f"class_output: {output_cls.shape}")
             pred_cls = torch.argmax(output_cls, dim=1)
             correct = (pred_cls == target_cls).float().sum()
-            # print(f"pred_class: {pred_cls.shape}")
-            # print(f"class_target: {target_cls.shape}")
-            # print(f"Num. correct / total classifications this batch: {correct.item()} / {target_cls.size(0)}")
-            # print(f"Predicted classes vs. target classes this batch: {pred_cls} / {target_cls} ")
             self.correct_classifications += correct.item()
             self.total_classifications += target_cls.size(0)
 

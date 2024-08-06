@@ -433,8 +433,6 @@ class CustomUNet(SegmentationNetwork):
         self.upscale_logits = upscale_logits
         if nonlin_kwargs is None:
             nonlin_kwargs = {'negative_slope': 1e-2, 'inplace': True}
-        if dropout_op_kwargs is None:
-            dropout_op_kwargs = {'p': 0.5, 'inplace': True}
         if norm_op_kwargs is None:
             norm_op_kwargs = {'eps': 1e-5, 'affine': True, 'momentum': 0.1}
 
@@ -453,9 +451,48 @@ class CustomUNet(SegmentationNetwork):
         self._deep_supervision = deep_supervision
         self.do_ds = deep_supervision
         
+        
+        self.classify_2l = False
+        self.classify_4l = False
+        self.classify_hybrid = False
+        self.classify_upsample = False
+        self.classify_global_attention_pool = False
+        self.classify_spatial_attention = False
+        self.classify_resnet = False
+        
+        
+        self.classify_convolution = True        
         self.classify_all_features = False
+        self.classify_linear = True
+        self.dropout = 0.0
+        
         self.inference_mode = False
+        
+        print(f"""
+        
+****************************************************************************************************************
 
+self.classify_2l = {self.classify_2l}
+self.classify_4l = {self.classify_4l}
+self.classify_hybrid = {self.classify_hybrid}
+self.classify_upsample = {self.classify_upsample}
+self.classify_global_attention_pool = {self.classify_global_attention_pool}
+self.classify_spatial_attention = {self.classify_spatial_attention}
+self.classify_resnet = {self.classify_resnet}
+
+self.classify_convolution = {self.classify_convolution}
+self.classify_all_features = {self.classify_all_features}
+self.classify_linear = {self.classify_linear}
+
+self.inference_mode = {self.inference_mode}
+
+****************************************************************************************************************        
+        
+        """)
+        
+        if dropout_op_kwargs is None:
+            dropout_op_kwargs = {'p': self.dropout, 'inplace': True}
+        
         if conv_op == nn.Conv2d:
             upsample_mode = 'bilinear'
             pool_op = nn.MaxPool2d
@@ -595,7 +632,6 @@ class CustomUNet(SegmentationNetwork):
             # self.classifier = nn.Linear(1280, self.classification_classes)
             
             # Unstable, up to 40% accuracy
-            self.classify_2l = False
             if self.classify_2l:
                 self.classifier = nn.Sequential(
                     nn.Linear(1280, 512),
@@ -605,7 +641,6 @@ class CustomUNet(SegmentationNetwork):
                 )
             
             # Even more unstable
-            self.classify_4l = False
             if self.classify_4l:
                 self.classifier = nn.Sequential(
                     nn.Linear(1280, 512),
@@ -623,9 +658,7 @@ class CustomUNet(SegmentationNetwork):
             
 
             ##### CONVOLUTIONAL CLASSIFY #####
-            self.conv_classify = True
-            if self.conv_classify:
-                
+            if self.classify_convolution:
                 if self.convolutional_upsampling:
                     final_num_features = output_features
                 else:
@@ -688,29 +721,36 @@ class CustomUNet(SegmentationNetwork):
                         nn.Linear(128, self.classification_classes)
                     )
                 else:
-                    self.classification_final = nn.Sequential(
-                        nn.Linear(3, 512),  # 3 is the number of classes/channels
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5),
-                        nn.Linear(512, 256),  
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5),
-                        nn.Linear(256, 128),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5),
-                        nn.Linear(128, 64),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout(p=0.5),
-                        nn.Linear(64, self.classification_classes)
-                    )
+                    if self.classify_linear:
+                        self.classification_final = nn.Sequential(
+                            nn.Linear(3, 64),  # 3 is the number of classes/channels
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(p=0.5),
+                            nn.Linear(64, self.classification_classes)
+                        )
+                    else:
+                        self.classification_final = nn.Sequential(
+                            nn.Linear(3, 512),  # 3 is the number of classes/channels
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(p=0.5),
+                            nn.Linear(512, 256),  
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(p=0.5),
+                            nn.Linear(256, 128),
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(p=0.5),
+                            nn.Linear(128, 64),
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(p=0.5),
+                            nn.Linear(64, self.classification_classes)
+                        )
                 
                 
             
             
             
             ##### GLOBAL ATTENTION POOL #####
-            self.global_attention_pool = False
-            if self.global_attention_pool:
+            if self.classify_global_attention_pool:
                 self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
                 self.attention_pooling = AttentionPooling(input_channels=1572864)
                 self.classifier = SixLayerClassifier(input_features=1312, num_classes=self.classification_classes)
@@ -718,14 +758,12 @@ class CustomUNet(SegmentationNetwork):
         
         
             ##### CLASSIFY HYBRID #####
-            self.classify_hybrid = False
             if self.classify_hybrid:
                 self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
                 self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
             
             
             ##### CLASSIFY UPSAMPLE #####
-            self.classify_upsample = False
             if self.classify_upsample:
                 self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
                 self.classifier = SixLayerClassifier(input_features=2048, num_classes=self.classification_classes)
@@ -733,7 +771,6 @@ class CustomUNet(SegmentationNetwork):
             
             
             ##### LOCALIZATION & REGISTER #####
-            
             for ds in range(len(self.conv_blocks_localization)):
                 self.seg_outputs.append(conv_op(self.conv_blocks_localization[ds][-1].output_channels, num_classes,
                                                 1, 1, 0, 1, 1, seg_output_use_bias))
@@ -807,7 +844,7 @@ class CustomUNet(SegmentationNetwork):
 
             # Classification pathways
             if self.classification_classes:
-                if self.conv_classify:
+                if self.classify_convolution:
                     
                     class_outputs = []
                     x = bottleneck_features
