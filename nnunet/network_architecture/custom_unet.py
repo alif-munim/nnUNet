@@ -464,7 +464,7 @@ class CustomUNet(SegmentationNetwork):
         self.classify_convolution = True        
         self.classify_all_features = False
         self.classify_linear = True
-        self.dropout = 0.0
+        self.dropout = 0.5
         
         self.inference_mode = False
         
@@ -472,19 +472,22 @@ class CustomUNet(SegmentationNetwork):
         
 ****************************************************************************************************************
 
-self.classify_2l = {self.classify_2l}
-self.classify_4l = {self.classify_4l}
-self.classify_hybrid = {self.classify_hybrid}
-self.classify_upsample = {self.classify_upsample}
-self.classify_global_attention_pool = {self.classify_global_attention_pool}
-self.classify_spatial_attention = {self.classify_spatial_attention}
-self.classify_resnet = {self.classify_resnet}
+                INITIALIZING MULTI-TASK U-NET
 
-self.classify_convolution = {self.classify_convolution}
-self.classify_all_features = {self.classify_all_features}
-self.classify_linear = {self.classify_linear}
+                self.classify_2l = {self.classify_2l}
+                self.classify_4l = {self.classify_4l}
+                self.classify_hybrid = {self.classify_hybrid}
+                self.classify_upsample = {self.classify_upsample}
+                self.classify_global_attention_pool = {self.classify_global_attention_pool}
+                self.classify_spatial_attention = {self.classify_spatial_attention}
+                self.classify_resnet = {self.classify_resnet}
 
-self.inference_mode = {self.inference_mode}
+                self.classify_convolution = {self.classify_convolution}
+                    self.classify_all_features = {self.classify_all_features}
+                    self.classify_linear = {self.classify_linear}
+                self.dropout = {self.dropout}
+
+                self.inference_mode = {self.inference_mode}
 
 ****************************************************************************************************************        
         
@@ -820,16 +823,16 @@ self.inference_mode = {self.inference_mode}
         # Bottleneck layer
         bottleneck_features = self.conv_blocks_context[-1](x)
         classification_features.append(self.global_avg_pool(bottleneck_features))
-        upsample_features = []
+        
 
         # Segmentation pathway
         x = bottleneck_features
+        upsample_features = []
         for u in range(len(self.tu)):
             x = self.tu[u](x)
             x = torch.cat((x, skips[-(u + 1)]), dim=1)
             x = self.conv_blocks_localization[u](x)
             seg_outputs.append(self.final_nonlin(self.seg_outputs[u](x)))
-            
             upsample_features.append(x)
 
         if self._deep_supervision and self.do_ds:
@@ -871,13 +874,17 @@ self.inference_mode = {self.inference_mode}
                     class_logits = self.classification_final(class_features)
 
                     return seg_output, class_logits
+                
                 if self.classify_resnet and hasattr(self, 'resnet'):
+                    
                     class_features = self.global_avg_pool(bottleneck_features)
                     lass_features = torch.flatten(class_features, 1)
                     class_features = class_features.squeeze()
                     class_output = self.resnet(class_features)
-                    return seg_output, class_output   
+                    return seg_output, class_output 
+                
                 elif self.classify_spatial_attention and hasattr(self, 'spatial_attention'):
+                    
                     class_features = self.se_block(bottleneck_features)
                     class_features = class_features * self.spatial_attention(class_features)
                     class_features = self.global_avg_pool(class_features)
@@ -889,13 +896,17 @@ self.inference_mode = {self.inference_mode}
                     class_output = F.dropout(class_output, p=0.5)
                     class_output = self.fc3(class_output)
                     return seg_output, class_output
+                
                 elif self.classify_upsample:
+                    
                     upsample_features = torch.cat(upsample_features, dim=1) 
                     class_features = F.adaptive_avg_pool2d(upsample_features, (1, 1))
                     class_features = torch.flatten(class_features, 1)
                     class_output = self.classifier(class_features)
                     return seg_output, class_output
+                
                 elif self.classify_hybrid:
+                    
                     bottleneck_pooled = F.adaptive_avg_pool2d(bottleneck_features, (1, 1))
                     bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
 
@@ -907,7 +918,9 @@ self.inference_mode = {self.inference_mode}
 
                     class_output = self.classifier(combined_features)
                     return seg_output, class_output
+                
                 elif self.global_attention_pool:
+                    
                     bottleneck_pooled = self.global_avg_pool(bottleneck_features)
                     bottleneck_pooled = torch.flatten(bottleneck_pooled, 1)
 
@@ -918,12 +931,14 @@ self.inference_mode = {self.inference_mode}
 
                     class_output = self.classifier(combined_features)
                     return seg_output, class_output
+                
                 else:
 
                     class_features = self.global_avg_pool(bottleneck_features)
                     class_features = torch.flatten(class_features, 1)
                     class_output = self.classifier(class_features)
                     return seg_output, class_output
+                
             else:
                 return seg_output
 

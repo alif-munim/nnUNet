@@ -41,6 +41,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import torch.nn as nn
 import torch.nn.functional as F
+import pandas as pd
 
 class FocalLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, reduction='mean'):
@@ -72,8 +73,9 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
-        self.initial_lr = 1e-2
-        self.classification_lr = self.initial_lr * 10
+        
+        self.initial_lr = 1e-3
+        self.classification_lr = self.initial_lr
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
@@ -82,24 +84,30 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.custom_unet = True
         self.eval_only = False
         
-        self.use_seg_weight = True
-        self.seg_weight = 0.0
+        self.use_seg_weight = False
+        self.seg_weight = 1.0
         self.use_adam = False
         self.use_focal_loss = False
-        self.grad_clip_value = 100
-        self.weight_decay = 0.0
+        self.grad_clip_value = 12
+        self.weight_decay = 3e-5
         
-        self.batch_size = 1
+        self.print_grad_norm = False
+        self.verbose_training = False
+        self.print_lr = False
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
             self.class_mapping = {key.replace('_0000.nii.gz','.npz'):value for key, value in self.class_mapping.items()}
+            
+        
+        self.class_df = pd.read_csv('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.csv')
         
         
         print(f"""
-        #################################################################
+****************************************************************************************************************
         
-                        Initializing Custom Trainer
+                        INITIALIZING CUSTOM TRAINER
+                        
                         Initial LR: {self.initial_lr}
                         Classification LR: {self.classification_lr}
                         Custom U-Net: {self.custom_unet}
@@ -109,7 +117,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                         Grad Clipping: {self.grad_clip_value}
                         Only Run Eval: {self.eval_only}
         
-        #################################################################
+****************************************************************************************************************
         """)
 
     def initialize(self, training=True, force_load_plans=False):
@@ -304,7 +312,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.print_to_log_file("Classification lr:", np.round(self.optimizer.param_groups[1]['lr'], decimals=6))
 
         # Print current learning rates
-        self.print_current_lr()
+        if self.print_lr:
+            self.print_current_lr()
     
 
     
@@ -369,15 +378,18 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         class_labels = np.array(data_dict['classification_labels'])
         cases = data_dict['cases']
         
-        # To verify the dataloader class labels align with true labels
-        print(f"""
-            DATALOADER
-            cases: {cases}
-            class_labels: {class_labels}
-        """)
-        
-        for case_id in cases:
-            print(f"""TRUTH -> {case_id}: {self.class_mapping[case_id]}""")
+        if self.verbose_training:
+            print(f"""
+                DATALOADER
+                cases: {cases}
+                class_labels: {class_labels}
+            """)
+
+            for case_id in cases:
+                print(f"MAPPING -> {case_id}: {self.class_mapping[case_id]}")
+                case_id = case_id.replace('.npz', '')
+                print(f"ORIGINAL PATH -> {self.class_df[self.class_df['Case ID'] == case_id]['Original Path'].values[0]}")
+                print(f"TRUE LABEL -> {self.class_df[self.class_df['Case ID'] == case_id]['Class Label'].values[0]}")
         
 
         data = maybe_to_torch(data)
@@ -397,7 +409,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             seg_target = target
             seg_output, class_output = self.network(data)
             
-            print(f"""PRED -> {torch.argmax(class_output, dim=1)}""")
+            if self.verbose_training:
+                print(f"""PRED -> {torch.argmax(class_output, dim=1)}""")
             
             seg_loss = self.segmentation_loss(seg_output, seg_target)
             class_loss = self.classification_loss(class_output, class_labels)
@@ -421,9 +434,10 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.grad_clip_value)
             
-            for name, param in self.network.named_parameters():
-                if param.grad is not None:
-                    print(f"Layer: {name}, Grad norm: {param.grad.norm()}")
+            if self.print_grad_norm:
+                for name, param in self.network.named_parameters():
+                    if param.grad is not None:
+                        print(f"Layer: {name}, Grad norm: {param.grad.norm()}")
             self.optimizer.step()
 
         if run_online_evaluation:
