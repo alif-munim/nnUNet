@@ -225,6 +225,7 @@ class DataLoader3D(SlimDataLoaderBase):
         data = np.zeros(self.data_shape, dtype=np.float32)
         seg = np.zeros(self.seg_shape, dtype=np.float32)
         case_properties = []
+        cases = []
         for j, i in enumerate(selected_keys):
             # oversampling foreground will improve stability of model training, especially if many patches are empty
             # (Lung for example)
@@ -376,7 +377,11 @@ class DataLoader3D(SlimDataLoaderBase):
                                                               max(bbox_z_ub - shape[2], 0))),
                                    'constant', **{'constant_values': 0})
 
-        return {'data': data, 'seg': seg, 'properties': case_properties, 'keys': selected_keys}
+            
+            case_id = os.path.basename(self._data[i]['data_file']).replace('.npz', '')
+            cases.append(case_id)
+                
+        return {'data': data, 'seg': seg, 'properties': case_properties, 'keys': selected_keys, 'cases': cases}
 
 
 class DataLoader2D(SlimDataLoaderBase):
