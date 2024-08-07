@@ -75,8 +75,12 @@ class Custom_UNet(SegmentationNetwork):
         
         self.multi_task = multi_task
         self.classification_classes = 3
+        self.classify_convolution = False
+        
         self.classify_all_features = False
-        self.classify_encoder_features = True
+        self.classify_encoder_features = False
+        self.classify_bottleneck_features = False
+        self.classify_decoder_features = True
         
         self.convolutional_upsampling = convolutional_upsampling
         self.convolutional_pooling = convolutional_pooling
@@ -262,21 +266,129 @@ class Custom_UNet(SegmentationNetwork):
             # self.apply(print_module_training_status)
             
             
+            
+        if self.classify_convolution:
+            
+            self.conv_blocks_classification = []
+            self.classification_tu = []
+            self.class_outputs = []
+            
+            if self.convolutional_upsampling:
+                final_num_features = output_features
+            else:
+                final_num_features = self.conv_blocks_context[-1].output_channels
+
+            # now lets build the localization pathway
+            for u in range(num_pool):
+                nfeatures_from_down = final_num_features
+                nfeatures_from_skip = self.conv_blocks_context[
+                    -(2 + u)].output_channels  # self.conv_blocks_context[-1] is bottleneck, so start with -2
+                n_features_after_tu_and_concat = nfeatures_from_skip * 2
+
+                # the first conv reduces the number of features to match those of skip
+                # the following convs work on that number of features
+                # if not convolutional upsampling then the final conv reduces the num of features again
+                if u != num_pool - 1 and not self.convolutional_upsampling:
+                    final_num_features = self.conv_blocks_context[-(3 + u)].output_channels
+                else:
+                    final_num_features = nfeatures_from_skip
+
+                if not self.convolutional_upsampling:
+                    self.classification_tu.append(Upsample(scale_factor=pool_op_kernel_sizes[-(u + 1)], mode=upsample_mode))
+                else:
+                    self.classification_tu.append(transpconv(nfeatures_from_down, nfeatures_from_skip, pool_op_kernel_sizes[-(u + 1)],
+                                              pool_op_kernel_sizes[-(u + 1)], bias=False))
+
+                self.conv_kwargs['kernel_size'] = self.conv_kernel_sizes[- (u + 1)]
+                self.conv_kwargs['padding'] = self.conv_pad_sizes[- (u + 1)]
+                self.conv_blocks_classification.append(nn.Sequential(
+                    StackedConvLayers(n_features_after_tu_and_concat, nfeatures_from_skip, num_conv_per_stage - 1,
+                                      self.conv_op, self.conv_kwargs, self.norm_op, self.norm_op_kwargs, self.dropout_op,
+                                      self.dropout_op_kwargs, self.nonlin, self.nonlin_kwargs, basic_block=basic_block),
+                    StackedConvLayers(nfeatures_from_skip, final_num_features, 1, self.conv_op, self.conv_kwargs,
+                                      self.norm_op, self.norm_op_kwargs, self.dropout_op, self.dropout_op_kwargs,
+                                      self.nonlin, self.nonlin_kwargs, basic_block=basic_block)
+                ))
+
+            for ds in range(len(self.conv_blocks_classification)):
+                self.class_outputs.append(conv_op(self.conv_blocks_classification[ds][-1].output_channels, num_classes,
+                                                1, 1, 0, 1, 1, seg_output_use_bias))
+
+            self.class_outputs = nn.ModuleList(self.class_outputs)
+            self.conv_blocks_classification = nn.ModuleList(self.conv_blocks_classification)
+            self.classification_tu = nn.ModuleList(self.classification_tu)
+            
+            
+        # self.classification_final = nn.Sequential(
+        #     nn.Linear(800, 1024), 
+            # nn.ReLU(inplace=True),
+            # nn.Dropout(p=0.5),
+        #     nn.Linear(1024, 512),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(512, 256),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(256, 64),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(64, self.classification_classes)
+        # )
+        
+        # self.classification_final = nn.Sequential(
+        #     nn.Linear(800, 64),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(64, self.classification_classes)
+        # )
+        
+        # self.classification_final = nn.Sequential(
+        #     nn.Linear(800, 512),
+        #     nn.BatchNorm1d(512),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(512, 256),
+        #     nn.BatchNorm1d(256),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(256, 128),
+        #     nn.BatchNorm1d(128),
+        #     nn.ReLU(inplace=True),
+        #     nn.Dropout(p=0.5),
+        #     nn.Linear(128, self.classification_classes)
+        # )
+        
         self.classification_final = nn.Sequential(
-            nn.Linear(1120, 512),  # 3 is the number of classes/channels
+            nn.Linear(800, 512),
+            nn.LayerNorm(512),
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.5),
-            nn.Linear(512, self.classification_classes)
+            nn.Linear(512, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            nn.Linear(256, 128),
+            nn.LayerNorm(128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),
+            nn.Linear(128, self.classification_classes)
         )
         
             
     def global_avg_pool(self, x):
                 return F.adaptive_avg_pool3d(x, (1, 1, 1)).view(x.size(0), -1)
 
+        
+        
+        
+        
+        
+        
     def forward(self, x):
         skips = []
         seg_outputs = []
         encoder_features = []
+        seg_decoder_features = []
         
         for d in range(len(self.conv_blocks_context) - 1):
             x = self.conv_blocks_context[d](x)
@@ -294,20 +406,53 @@ class Custom_UNet(SegmentationNetwork):
             x = torch.cat((x, skips[-(u + 1)]), dim=1)
             x = self.conv_blocks_localization[u](x)
             seg_outputs.append(self.final_nonlin(self.seg_outputs[u](x)))
+            seg_decoder_features.append(self.global_avg_pool(x))
+            
+        if self._deep_supervision and self.do_ds:
+            seg_output = tuple([seg_outputs[-1]] + [i(j) for i, j in
+                                              zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
+        else:
+            seg_output = seg_outputs[-1]
             
         if self.multi_task:
 
-            if self.classify_encoder_features: 
-                class_features = torch.cat(encoder_features, dim=1)
+            if self.classify_convolution:
+                class_outputs = []
+                class_decoder_features = []
+                x = bottleneck_features
+                for u in range(len(self.classification_tu)):
+                    x = self.classification_tu[u](x)
+                    x = torch.cat((x, skips[-(u + 1)]), dim=1)
+                    x = self.conv_blocks_classification[u](x)
+                    class_outputs.append(self.final_nonlin(self.class_outputs[u](x)))
+                    class_decoder_features.append(self.global_avg_pool(x))
+                    
+                if self.classify_decoder_features:
+                    class_features = torch.cat(class_decoder_features, dim=1) 
+                elif self.classify_all_features:
+                    class_features = torch.cat(encoder_features + class_decoder_features, dim=1)
 
-            class_logits = self.classification_final(class_features)
-            
-            if self._deep_supervision and self.do_ds:
-                seg_output = tuple([seg_outputs[-1]] + [i(j) for i, j in
-                                                  zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
             else:
-                seg_output = seg_outputs[-1]
+                if self.classify_encoder_features: 
+                    class_features = torch.cat(encoder_features, dim=1) # 1120
+                elif self.classify_bottleneck_features:
+                    class_features = encoder_features[-1] # 320
+                elif self.classify_decoder_features:
+                    class_features = torch.cat(seg_decoder_features, dim=1) # 800
+                elif self.classify_all_features:
+                    class_features = torch.cat(encoder_features + seg_decoder_features, dim=1)
+                else:
+                    # When only using last layer
+                    if self._deep_supervision and self.do_ds:
+                        class_output = tuple([class_outputs[-1]] + [i(j) for i, j in
+                                                                zip(list(self.upscale_logits_ops)[::-1], class_outputs[:-1][::-1])])
+                    else:
+                        class_output = class_outputs[-1]
 
+                    class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
+
+                
+            class_logits = self.classification_final(class_features)               
             return seg_output, class_logits
         else:
             if self._deep_supervision and self.do_ds:
@@ -316,6 +461,13 @@ class Custom_UNet(SegmentationNetwork):
             else:
                 return seg_outputs[-1]
 
+            
+            
+            
+            
+            
+            
+            
     @staticmethod
     def compute_approx_vram_consumption(patch_size, num_pool_per_axis, base_num_features, max_num_features,
                                         num_modalities, num_classes, pool_op_kernel_sizes, deep_supervision=False,

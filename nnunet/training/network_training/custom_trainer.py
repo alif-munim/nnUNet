@@ -48,12 +48,13 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
-        self.initial_lr = 1e-2
+        self.initial_lr = 1e-7 # 1e-2
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
         self.pin_memory = True
         self.use_multi_task_model = True
+        self.seg_weight = 0.5
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
@@ -245,7 +246,6 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         data_dict = next(data_generator)
         data = data_dict['data']
         target = data_dict['target']
-        
         cases = data_dict['cases']
         
         case_paths = []
@@ -255,6 +255,9 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             case_id = case_id.replace('.npz', '')
             case_paths.append(self.class_df[self.class_df['Case ID'] == case_id]['Original Path'].values[0])
             case_labels.append(self.class_df[self.class_df['Case ID'] == case_id]['Class Label'].values[0])
+            
+        # print(f"case_paths: {case_paths}")
+        # print(f"case_labels: {case_labels}")
             
         data = maybe_to_torch(data)
         target = maybe_to_torch(target)
@@ -274,9 +277,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                     del data
                     seg_loss = self.loss(seg_output, target)
                     class_loss = self.classification_loss(class_output, class_labels)
-                    l = class_loss + seg_loss
-                    
-                    # print(f"seg_loss: {seg_loss} || class_loss: {class_loss}")
+                    l = class_loss + (self.seg_weight * seg_loss)
 
                 if do_backprop:
                     self.amp_grad_scaler.scale(l).backward()
@@ -289,9 +290,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                 del data
                 seg_loss = self.loss(seg_output, target)
                 class_loss = self.classification_loss(class_output, class_labels)
-                l = class_loss + seg_loss
-                
-                # print(f"seg_loss: {seg_loss} || class_loss: {class_loss}")
+                l = class_loss + (self.seg_weight * seg_loss)
 
                 if do_backprop:
                     l.backward()
