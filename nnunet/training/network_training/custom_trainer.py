@@ -48,13 +48,15 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
         self.max_num_epochs = 1000
-        self.initial_lr = 1e-7 # 1e-2
+        self.initial_lr = 1e-2 # 1e-2
+        self.classification_lr = 1e-7
         self.deep_supervision_scales = None
         self.ds_loss_weights = None
 
         self.pin_memory = True
         self.use_multi_task_model = True
         self.seg_weight = 0.5
+        self.use_adam = False
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
@@ -175,11 +177,56 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             self.network.cuda()
         self.network.inference_apply_nonlin = softmax_helper
 
+        
+        
+    def get_parameter_groups(self):
+        classification_params = []
+        other_params = []
+        for name, param in self.network.named_parameters():
+            if 'classification_final' in name or 'class_outputs' in name:  # Adjust based on your actual naming
+                classification_params.append(param)
+            else:
+                other_params.append(param)
+
+        print(f"Number of classification parameters: {len(classification_params)}")
+        print(f"Number of other parameters: {len(other_params)}")
+
+        return [
+            {'params': other_params, 'lr': self.initial_lr},
+            {'params': classification_params, 'lr': self.classification_lr}
+        ]
+    
+    
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
-        self.optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
-                                         momentum=0.99, nesterov=True)
+
+        param_groups = self.get_parameter_groups()
+
+        if self.use_adam:
+            self.optimizer = torch.optim.Adam(param_groups, weight_decay=self.weight_decay)
+        else:
+            self.optimizer = torch.optim.SGD(param_groups, momentum=0.99, nesterov=True)
+
         self.lr_scheduler = None
+        self.print_current_lr()
+
+    
+            
+    def print_current_lr(self):
+        for i, param_group in enumerate(self.optimizer.param_groups):
+            self.print_to_log_file(f"Parameter Group {i}:")
+            self.print_to_log_file(f"  Learning rate: {param_group['lr']}")
+            self.print_to_log_file("  Parameters:")
+
+            # Get the ids of parameters in this group
+            param_ids = set(id(p) for p in param_group['params'])
+
+            for name, param in self.network.named_parameters():
+                if id(param) in param_ids:
+                    if param.requires_grad:
+                        self.print_to_log_file(f"    {name}: shape = {param.shape}")
+            self.print_to_log_file("") # Empty line for better readability
+            
 
     def run_online_evaluation(self, output, target):
         """

@@ -75,7 +75,7 @@ class Custom_UNet(SegmentationNetwork):
         
         self.multi_task = multi_task
         self.classification_classes = 3
-        self.classify_convolution = False
+        self.classify_convolution = True
         
         self.classify_all_features = False
         self.classify_encoder_features = False
