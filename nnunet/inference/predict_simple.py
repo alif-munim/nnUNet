@@ -122,6 +122,10 @@ def main():
                         help='Predictions are done with mixed precision by default. This improves speed and reduces '
                              'the required vram. If you want to disable mixed precision you can set this flag. Note '
                              'that this is not recommended (mixed precision is ~2x faster!)')
+    
+    
+    parser.add_argument("--classification", required=False, default=False, action="store_true",
+                        help="predict classification labels")
 
     args = parser.parse_args()
     input_folder = args.input_folder
@@ -220,7 +224,7 @@ def main():
                         num_threads_nifti_save, lowres_segmentations, part_id, num_parts, not disable_tta,
                         overwrite_existing=overwrite_existing, mode=mode, overwrite_all_in_gpu=all_in_gpu,
                         mixed_precision=not args.disable_mixed_precision,
-                        step_size=step_size, checkpoint_name=args.chk)
+                        step_size=step_size, checkpoint_name=args.chk, classification=args.classification)
     end = time()
     save_json(end - st, join(output_folder, 'prediction_time.txt'))
 

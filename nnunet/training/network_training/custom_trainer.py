@@ -86,7 +86,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.use_focal_loss = False
         # self.lr_scheduler_patience = 20
         
-        self.inference_mode = True
+        self.inference_mode = False
+        self.testing_mode = True
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
@@ -230,9 +231,6 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             {'params': classification_params, 'lr': self.classification_lr}
         ]
 
-
-
-
     
 #     def initialize_optimizer_and_scheduler(self):
 #         assert self.network is not None, "self.initialize_network must be called first"
@@ -247,7 +245,6 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 #         self.lr_scheduler = None
 #         self.print_current_lr()
 
-    
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
         param_groups = self.get_parameter_groups()
@@ -318,6 +315,30 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                                all_in_gpu=all_in_gpu, segmentation_export_kwargs=segmentation_export_kwargs,
                                run_postprocessing_on_folds=run_postprocessing_on_folds)
 
+        self.network.do_ds = ds
+        return ret
+    
+    
+    def predict_preprocessed_data_return_label(self, data: np.ndarray, do_mirroring: bool = True,
+                                                         mirror_axes: Tuple[int] = None,
+                                                         use_sliding_window: bool = False, step_size: float = 0.5,
+                                                         use_gaussian: bool = True, pad_border_mode: str = 'constant',
+                                                         pad_kwargs: dict = None, all_in_gpu: bool = False,
+                                                         verbose: bool = True, mixed_precision=True, classification=True):
+        """
+        We need to wrap this because we need to enforce self.network.do_ds = False for prediction
+        """
+        ds = self.network.do_ds
+        self.network.do_ds = False
+        ret = super().predict_preprocessed_data_return_label(data,
+                                                                       do_mirroring=do_mirroring,
+                                                                       mirror_axes=mirror_axes,
+                                                                       use_sliding_window=use_sliding_window,
+                                                                       step_size=step_size, use_gaussian=use_gaussian,
+                                                                       pad_border_mode=pad_border_mode,
+                                                                       pad_kwargs=pad_kwargs, all_in_gpu=all_in_gpu,
+                                                                       verbose=verbose,
+                                                                       mixed_precision=mixed_precision, classification=True)
         self.network.do_ds = ds
         return ret
 

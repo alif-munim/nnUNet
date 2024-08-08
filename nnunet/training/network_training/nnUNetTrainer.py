@@ -401,6 +401,16 @@ class nnUNetTrainer(NetworkTrainer):
     def get_basic_generators(self):
         self.load_dataset()
         self.do_split()
+        
+        print(f"""
+        
+                ########################################################
+                
+                                INITIALIZING TEST MODE
+                
+                ########################################################
+        
+        """)
 
         if self.threeD:
             dl_tr = DataLoader3D(self.dataset_tr, self.basic_generator_patch_size, self.patch_size, self.batch_size,
@@ -524,6 +534,50 @@ class nnUNetTrainer(NetworkTrainer):
                                       use_gaussian=use_gaussian, pad_border_mode=pad_border_mode,
                                       pad_kwargs=pad_kwargs, all_in_gpu=all_in_gpu, verbose=verbose,
                                       mixed_precision=mixed_precision)
+        self.network.train(current_mode)
+        return ret
+    
+    
+    def predict_preprocessed_data_return_label(self, data: np.ndarray, do_mirroring: bool = True,
+                                                         mirror_axes: Tuple[int] = None,
+                                                         use_sliding_window: bool = False, step_size: float = 0.5,
+                                                         use_gaussian: bool = True, pad_border_mode: str = 'constant',
+                                                         pad_kwargs: dict = None, all_in_gpu: bool = False,
+                                                         verbose: bool = True, mixed_precision: bool = True, classification: bool = True):
+        """
+        :param data:
+        :param do_mirroring:
+        :param mirror_axes:
+        :param use_sliding_window:
+        :param step_size:
+        :param use_gaussian:
+        :param pad_border_mode:
+        :param pad_kwargs:
+        :param all_in_gpu:
+        :param verbose:
+        :return:
+        """
+        if pad_border_mode == 'constant' and pad_kwargs is None:
+            pad_kwargs = {'constant_values': 0}
+
+        if do_mirroring and mirror_axes is None:
+            mirror_axes = self.data_aug_params['mirror_axes']
+
+        if do_mirroring:
+            assert self.data_aug_params["do_mirror"], "Cannot do mirroring as test time augmentation when training " \
+                                                      "was done without mirroring"
+
+        valid = list((SegmentationNetwork, nn.DataParallel))
+        assert isinstance(self.network, tuple(valid))
+
+        current_mode = self.network.training
+        self.network.eval()
+        ret = self.network.predict_3D_label(data, do_mirroring=do_mirroring, mirror_axes=mirror_axes,
+                                      use_sliding_window=use_sliding_window, step_size=step_size,
+                                      patch_size=self.patch_size, regions_class_order=self.regions_class_order,
+                                      use_gaussian=use_gaussian, pad_border_mode=pad_border_mode,
+                                      pad_kwargs=pad_kwargs, all_in_gpu=all_in_gpu, verbose=verbose,
+                                      mixed_precision=mixed_precision, classification=True)
         self.network.train(current_mode)
         return ret
 
