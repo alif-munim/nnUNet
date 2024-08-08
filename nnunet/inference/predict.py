@@ -232,6 +232,7 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
     
     test_cases = []
     labels = []
+    probs = []
     
     for preprocessed in preprocessing:
         output_filename, (d, dct) = preprocessed
@@ -245,18 +246,23 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
         trainer.load_checkpoint_ram(params[0], False)
         
         if classification:
-            label = trainer.predict_preprocessed_data_return_label(
+            logits = trainer.predict_preprocessed_data_return_label(
                 d, do_mirroring=do_tta, mirror_axes=trainer.data_aug_params['mirror_axes'], use_sliding_window=True,
                 step_size=step_size, use_gaussian=True, all_in_gpu=all_in_gpu,
                 mixed_precision=mixed_precision, classification=classification)
             
-            label = label.argmax(1).cpu().numpy()[0]
+            label = logits.argmax(1).cpu().numpy()[0]
+            prob_dist = torch.nn.functional.softmax(logits, dim=1)
+            
+            
             test_cases.append(output_filename)
             labels.append(label)
+            probs.append(prob_dist)
             
             print(f"""
             
                 >>>>>>>>>> OUTPUT FILE: {output_filename}
+                >>>>>>>>>> PROBS: {prob_dist}
                 >>>>>>>>>> LABEL: {label}
             
             """)
@@ -325,9 +331,9 @@ def predict_cases(model, list_of_lists, output_filenames, folds, save_npz, num_t
 
         with open(csv_filename, 'w', newline='') as csvfile:
             csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(['File', 'Label'])  # Write header
-            for case, label in zip(test_cases, labels):
-                csvwriter.writerow([case, label])
+            csvwriter.writerow(['File', 'Label', 'Probs'])  # Write header
+            for case, label, prob in zip(test_cases, labels, probs):
+                csvwriter.writerow([case, label, prob.detach().cpu().numpy().tolist()])
 
         print(f"Predictions saved to {csv_filename}")
     else:

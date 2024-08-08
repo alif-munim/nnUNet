@@ -175,6 +175,8 @@ The data is prepared for predictions and visualized in [prediction.ipynb](https:
 
 ### Evaluation
 
+Evaluation is done using Metrics Reloaded in [evaluation.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/evaluation.ipynb).
+
 ```
 nnUNet_evaluate_folder -ref "original_data/pancreas_validation/labels"  -pred "original_data/pancreas_validation_preds" -l 0 1 2
 ```
