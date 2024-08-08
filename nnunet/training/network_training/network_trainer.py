@@ -117,6 +117,8 @@ class NetworkTrainer(object):
         
         self.all_val_losses_tr_mode = []
         self.all_val_eval_metrics = []  # does not have to be used
+        self.all_val_class_acc = [] # does not have to be used
+        
         self.epoch = 0
         self.log_file = None
         self.deterministic = deterministic
@@ -126,7 +128,7 @@ class NetworkTrainer(object):
             self.use_progress_bar = bool(int(os.environ['nnunet_use_progress_bar']))
 
         ################# Settings for saving checkpoints ##################################
-        self.save_every = 50
+        self.save_every = 10
         self.save_latest_only = True  # if false it will not store/overwrite _latest but separate files each
         # time an intermediate checkpoint is created
         self.save_intermediate_checkpoints = True  # whether or not to save checkpoint_latest
@@ -182,6 +184,9 @@ class NetworkTrainer(object):
 
         tr_keys.sort()
         val_keys.sort()
+        
+        self.num_batches_per_epoch = len(tr_keys) // self.batch_size
+        self.num_val_batches_per_epoch = len(val_keys) // self.batch_size
 
         self.dataset_tr = OrderedDict()
         for i in tr_keys:
@@ -198,7 +203,7 @@ class NetworkTrainer(object):
         """
         try:
             font = {'weight': 'normal',
-                    'size': 18}
+                    'size': 24}
 
             matplotlib.rc('font', **font)
 
@@ -208,18 +213,28 @@ class NetworkTrainer(object):
 
             x_values = list(range(self.epoch + 1))
 
-            ax.plot(x_values, self.all_tr_losses, color='b', ls='-', label="loss_tr")
+            # ax.plot(x_values, self.all_tr_losses, color='b', ls='-', label="loss_tr")
+            ax.plot(x_values, self.all_tr_seg_losses, color='#FF4156', ls='-', label="Train Loss (Seg)", linewidth=3)
+            ax.plot(x_values, self.all_tr_class_losses, color='#FF4156', linestyle='-.', dashes=(10, 5, 2, 5), label="Train Loss (Class)", linewidth=3)
 
-            ax.plot(x_values, self.all_val_losses, color='r', ls='-', label="loss_val, train=False")
+            ax.plot(x_values, self.all_val_seg_losses, color='#FFAA1E', ls='-', label="Val Loss (Seg)", linewidth=3)
+            ax.plot(x_values, self.all_val_class_losses, color='#FFAA1E', linestyle='-.', dashes=(10, 5, 2, 5), label="Val Loss (Class)", linewidth=3)
 
             if len(self.all_val_losses_tr_mode) > 0:
-                ax.plot(x_values, self.all_val_losses_tr_mode, color='g', ls='-', label="loss_val, train=True")
+                # ax.plot(x_values, self.all_val_losses_tr_mode, color='g', ls='-', label="loss_val, train=True")
+                ax.plot(x_values, self.all_val_seg_losses_tr_mode, color='#FFAA1E', ls='-', label="Val Loss (Class), train=True", linewidth=3)
+                ax.plot(x_values, self.all_val_class_losses_tr_mode, color='#FFAA1E', linestyle='-.', dashes=(10, 5, 2, 5), label="Val Loss (Seg), train=True", linewidth=3)
             if len(self.all_val_eval_metrics) == len(x_values):
-                ax2.plot(x_values, self.all_val_eval_metrics, color='g', ls='--', label="evaluation metric")
+                ax2.plot(x_values, self.all_val_eval_metrics, color='#459395', ls='-', label="Dice Score", linewidth=3)
+            
+            if len(self.all_val_class_acc) == len(x_values):
+                ax2.plot(x_values, self.all_val_class_acc, color='#459395', linestyle='-.', dashes=(10, 5, 2, 5), label="Classification Accuracy", linewidth=3)
 
-            ax.set_xlabel("epoch")
-            ax.set_ylabel("loss")
-            ax2.set_ylabel("evaluation metric")
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel("Loss")
+            ax2.set_ylabel("Evaluation Metric")
+            ax.set_title("Multi-Task Training and Validation Losses with Evaluation Metrics")
+            
             ax.legend()
             ax2.legend(loc=9)
 
@@ -663,7 +678,7 @@ class NetworkTrainer(object):
         return continue_training
 
     def on_epoch_end(self):
-        self.finish_online_evaluation()  # does not have to do anything, but can be used to update self.all_val_eval_
+        self.finish_online_evaluation(multi_task=self.network.multi_task)  # does not have to do anything, but can be used to update self.all_val_eval_
         # metrics
 
         self.plot_progress()

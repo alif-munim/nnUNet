@@ -112,6 +112,9 @@ class nnUNetTrainer(NetworkTrainer):
         self.online_eval_tp = []
         self.online_eval_fp = []
         self.online_eval_fn = []
+        
+        self.correct_classifications = 0
+        self.total_classifications = 0
 
         self.classes = self.do_dummy_2D_aug = self.use_mask_for_norm = self.only_keep_largest_connected_component = \
             self.min_region_size_per_class = self.min_size_per_class = None
@@ -534,7 +537,7 @@ class nnUNetTrainer(NetworkTrainer):
 
         current_mode = self.network.training
         self.network.eval()
-
+        
         assert self.was_initialized, "must initialize, ideally with checkpoint (or train first)"
         if self.dataset_val is None:
             self.load_dataset()
@@ -680,20 +683,28 @@ class nnUNetTrainer(NetworkTrainer):
 
         self.network.train(current_mode)
 
-    def run_online_evaluation(self, output, target):
+    def run_online_evaluation(self, output, target, multi_task=False):
+        
+        if multi_task:
+            seg_output, class_output = output
+            seg_target, class_labels = target
+        else:
+            seg_output = output
+            seg_target = target
+        
         with torch.no_grad():
-            num_classes = output.shape[1]
-            output_softmax = softmax_helper(output)
+            num_classes = seg_output.shape[1]
+            output_softmax = softmax_helper(seg_output)
             output_seg = output_softmax.argmax(1)
-            target = target[:, 0]
-            axes = tuple(range(1, len(target.shape)))
-            tp_hard = torch.zeros((target.shape[0], num_classes - 1)).to(output_seg.device.index)
-            fp_hard = torch.zeros((target.shape[0], num_classes - 1)).to(output_seg.device.index)
-            fn_hard = torch.zeros((target.shape[0], num_classes - 1)).to(output_seg.device.index)
+            seg_target = seg_target[:, 0]
+            axes = tuple(range(1, len(seg_target.shape)))
+            tp_hard = torch.zeros((seg_target.shape[0], num_classes - 1)).to(output_seg.device.index)
+            fp_hard = torch.zeros((seg_target.shape[0], num_classes - 1)).to(output_seg.device.index)
+            fn_hard = torch.zeros((seg_target.shape[0], num_classes - 1)).to(output_seg.device.index)
             for c in range(1, num_classes):
-                tp_hard[:, c - 1] = sum_tensor((output_seg == c).float() * (target == c).float(), axes=axes)
-                fp_hard[:, c - 1] = sum_tensor((output_seg == c).float() * (target != c).float(), axes=axes)
-                fn_hard[:, c - 1] = sum_tensor((output_seg != c).float() * (target == c).float(), axes=axes)
+                tp_hard[:, c - 1] = sum_tensor((output_seg == c).float() * (seg_target == c).float(), axes=axes)
+                fp_hard[:, c - 1] = sum_tensor((output_seg == c).float() * (seg_target != c).float(), axes=axes)
+                fn_hard[:, c - 1] = sum_tensor((output_seg != c).float() * (seg_target == c).float(), axes=axes)
 
             tp_hard = tp_hard.sum(0, keepdim=False).detach().cpu().numpy()
             fp_hard = fp_hard.sum(0, keepdim=False).detach().cpu().numpy()
@@ -703,8 +714,14 @@ class nnUNetTrainer(NetworkTrainer):
             self.online_eval_tp.append(list(tp_hard))
             self.online_eval_fp.append(list(fp_hard))
             self.online_eval_fn.append(list(fn_hard))
+            
+            if multi_task:
+                class_preds = torch.argmax(class_output, dim=1)
+                correct = (class_preds == class_labels).float().sum()
+                self.correct_classifications += correct.item()
+                self.total_classifications += class_labels.size(0)
 
-    def finish_online_evaluation(self):
+    def finish_online_evaluation(self, multi_task=False):
         self.online_eval_tp = np.sum(self.online_eval_tp, 0)
         self.online_eval_fp = np.sum(self.online_eval_fp, 0)
         self.online_eval_fn = np.sum(self.online_eval_fn, 0)
@@ -717,11 +734,26 @@ class nnUNetTrainer(NetworkTrainer):
         self.print_to_log_file("Average global foreground Dice:", [np.round(i, 4) for i in global_dc_per_class])
         self.print_to_log_file("(interpret this as an estimate for the Dice of the different classes. This is not "
                                "exact.)")
+        
+        if multi_task:
+            if self.total_classifications > 0:
+                classification_accuracy = self.correct_classifications / self.total_classifications
+            else:
+                classification_accuracy = 0
 
+            self.all_val_class_acc.append(classification_accuracy)
+
+            self.print_to_log_file("Average classification accuracy:", np.round(classification_accuracy, 4))
+            self.print_to_log_file(f"{self.correct_classifications} correct out of {self.total_classifications} total.")
+
+        # Reset counters
         self.online_eval_foreground_dc = []
         self.online_eval_tp = []
         self.online_eval_fp = []
         self.online_eval_fn = []
+        self.correct_classifications = 0
+        self.total_classifications = 0
+
 
     def save_checkpoint(self, fname, save_optimizer=True):
         super(nnUNetTrainer, self).save_checkpoint(fname, save_optimizer)

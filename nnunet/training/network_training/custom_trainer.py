@@ -35,7 +35,29 @@ from torch.cuda.amp import autocast
 from nnunet.training.learning_rate.poly_lr import poly_lr
 from batchgenerators.utilities.file_and_folder_operations import *
 
+import torch.nn as nn
+import torch.nn.functional as F
 import pandas as pd
+
+
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=2, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1-pt)**self.gamma * ce_loss
+
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
 
 
 class nnUNetTrainerV2_Custom(nnUNetTrainer):
@@ -47,7 +69,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                  unpack_data=True, deterministic=True, fp16=False):
         super().__init__(plans_file, fold, output_folder, dataset_directory, batch_dice, stage, unpack_data,
                          deterministic, fp16)
-        self.max_num_epochs = 1000
+        
+        self.max_num_epochs = 10000
         self.initial_lr = 1e-2 # 1e-2
         self.classification_lr = 5e-5
         self.deep_supervision_scales = None
@@ -56,7 +79,12 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.pin_memory = True
         self.use_multi_task_model = True
         self.seg_weight = 0.5
+        
         self.use_adam = False
+        # self.encoder_lr = self.initial_lr
+        # self.decoder_lr = self.initial_lr
+        self.use_focal_loss = False
+        # self.lr_scheduler_patience = 20
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
@@ -102,7 +130,10 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             self.loss = MultipleOutputLoss2(self.loss, self.ds_loss_weights)
             ################# END ###################
             
-            self.classification_loss = nn.CrossEntropyLoss()
+            if self.use_focal_loss:
+                self.classification_loss = FocalLoss(alpha=0.5, gamma=2)
+            else:
+                self.classification_loss = nn.CrossEntropyLoss()
 
             self.folder_with_preprocessed_data = join(self.dataset_directory, self.plans['data_identifier'] +
                                                       "_stage%d" % self.stage)
@@ -183,7 +214,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         classification_params = []
         other_params = []
         for name, param in self.network.named_parameters():
-            if 'classification_final' in name or 'class_outputs' in name:  # Adjust based on your actual naming
+            if 'classification_final' in name or 'class_outputs' in name: # original, output + linear layers (works well)
+            # if 'classification' in name or 'class_outputs' in name: # updated, conv + output + linear layers (doesn't work as well)
                 classification_params.append(param)
             else:
                 other_params.append(param)
@@ -195,19 +227,40 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             {'params': other_params, 'lr': self.initial_lr},
             {'params': classification_params, 'lr': self.classification_lr}
         ]
+
+
+
+
     
+#     def initialize_optimizer_and_scheduler(self):
+#         assert self.network is not None, "self.initialize_network must be called first"
+
+#         param_groups = self.get_parameter_groups()
+
+#         if self.use_adam:
+#             self.optimizer = torch.optim.Adam(param_groups, weight_decay=self.weight_decay)
+#         else:
+#             self.optimizer = torch.optim.SGD(param_groups, momentum=0.99, nesterov=True)
+
+#         self.lr_scheduler = None
+#         self.print_current_lr()
+
     
     def initialize_optimizer_and_scheduler(self):
         assert self.network is not None, "self.initialize_network must be called first"
-
         param_groups = self.get_parameter_groups()
 
         if self.use_adam:
-            self.optimizer = torch.optim.Adam(param_groups, weight_decay=self.weight_decay)
+            self.optimizer = torch.optim.Adam(
+                param_groups,
+                betas=(0.9, 0.999),
+                eps=1e-8,
+                weight_decay=self.weight_decay
+            )
         else:
             self.optimizer = torch.optim.SGD(param_groups, momentum=0.99, nesterov=True)
-
-        self.lr_scheduler = None
+            
+        # LR scheduler already initialized in nnUNetTrainer.py
         self.print_current_lr()
 
     
@@ -228,17 +281,25 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             self.print_to_log_file("") # Empty line for better readability
             
 
-    def run_online_evaluation(self, output, target):
+    def run_online_evaluation(self, output, target, multi_task=False):
         """
         due to deep supervision the return value and the reference are now lists of tensors. We only need the full
         resolution output because this is what we are interested in in the end. The others are ignored
         :param output:
         :param target:
         :return:
-        """
-        target = target[0]
-        output = output[0]
-        return super().run_online_evaluation(output, target)
+        """        
+        if multi_task:
+            seg_output, class_output = output
+            seg_target, class_labels = target
+            
+            output = (seg_output[0], class_output)
+            target = (seg_target[0], class_labels)
+        else:
+            output = output[0]
+            target = target[0]
+        
+        return super().run_online_evaluation(output, target, multi_task=self.use_multi_task_model)
 
     def validate(self, do_mirroring: bool = True, use_sliding_window: bool = True,
                  step_size: float = 0.5, save_softmax: bool = True, use_gaussian: bool = True, overwrite: bool = True,
@@ -292,7 +353,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         """
         data_dict = next(data_generator)
         data = data_dict['data']
-        target = data_dict['target']
+        seg_target = data_dict['target']
         cases = data_dict['cases']
         
         case_paths = []
@@ -307,12 +368,12 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         # print(f"case_labels: {case_labels}")
             
         data = maybe_to_torch(data)
-        target = maybe_to_torch(target)
+        seg_target = maybe_to_torch(seg_target)
         class_labels = maybe_to_torch(np.array(case_labels))
 
         if torch.cuda.is_available():
             data = to_cuda(data)
-            target = to_cuda(target)
+            seg_target = to_cuda(seg_target)
             class_labels = to_cuda(class_labels.long())
 
         self.optimizer.zero_grad()
@@ -322,7 +383,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                 with autocast():
                     seg_output, class_output = self.network(data)
                     del data
-                    seg_loss = self.loss(seg_output, target)
+                    seg_loss = self.loss(seg_output, seg_target)
                     class_loss = self.classification_loss(class_output, class_labels)
                     l = class_loss + (self.seg_weight * seg_loss)
 
@@ -335,7 +396,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
             else:
                 seg_output, class_output = self.network(data)
                 del data
-                seg_loss = self.loss(seg_output, target)
+                seg_loss = self.loss(seg_output, seg_target)
                 class_loss = self.classification_loss(class_output, class_labels)
                 l = class_loss + (self.seg_weight * seg_loss)
 
@@ -345,9 +406,11 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                     self.optimizer.step()
 
             if run_online_evaluation:
-                self.run_online_evaluation(seg_output, target)
+                outputs = (seg_output, class_output)
+                targets = (seg_target, class_labels)
+                self.run_online_evaluation(outputs, targets, multi_task=self.use_multi_task_model)
 
-            del target
+            del seg_target
             return seg_loss.detach().cpu().numpy(), class_loss.detach().cpu().numpy(), 
         else:
             if self.fp16:
@@ -436,6 +499,10 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
 
         tr_keys.sort()
         val_keys.sort()
+        
+        self.num_batches_per_epoch = len(tr_keys) // self.batch_size
+        self.num_val_batches_per_epoch = len(val_keys) // self.batch_size
+        
         self.dataset_tr = OrderedDict()
         for i in tr_keys:
             self.dataset_tr[i] = self.dataset[i]
