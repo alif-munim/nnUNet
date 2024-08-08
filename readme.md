@@ -23,6 +23,18 @@ Alongside the dice loss in the original setup, cross-entropy loss is used for th
 6. Loss weighting. Assigning higher weight to classification loss for better performance.
 
 
+### Training
+
+To train, we use the custom trainer with the following command. The fold must be 0 to preserve the original UHN dataset split for training and validation.
+
+```
+nnUNet_train 3d_fullres nnUNetTrainerV2_Custom Task006_PancreasUHN 0
+```
+
+![alt text](nnUNet/assets/final_progress.png "Training")
+
+Complete training run. Solid lines for segmentation, dash-dotted lines for classification. Red denotes training loss and yellow denotes validation loss. Green for evaluation performance (dice score for segmentation, accuracy for classification).
+
 ### Results
 
 The Metrics Reloaded framework was used to determine a more comprehensive suite of evaluations.
@@ -133,42 +145,38 @@ nnUNet_plan_and_preprocess -t 006
 The [hippocampus.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/hippocampus.ipynb) notebook is a general reference / practice file for planning and preprocessing.
 
 
-### Training
-
-To train, we use the custom trainer with the following command. The fold must be 0 to preserve the original UHN dataset split for training and validation.
-
-```
-nnUNet_train 3d_fullres nnUNetTrainerV2_Custom Task006_PancreasUHN 0
-```
 
 
 ### Inference
 
-> Note: if training was stopped before completion, you must rename your checkpoints to include model_final_checkpoint.model and model_final_checkpoint.model.pkl
-> You can either do this with model_latest.model or model_best.model.
-
-**Segmentation** <br>
-
-For segmentation inference on the validation set, run the following:
-```
-nnUNet_predict -i "original_data/pancreas_validation/images" -o "original_data/pancreas_validation_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28
-```
-
-For segmentation inference on the test set, run the following:
-```
-nnUNet_predict -i "nnUNet/original_data/pancreas_test/images" -o "nnUNet/original_data/pancreas_test_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28
-```
+> Note: if training was stopped before completion, you must rename your checkpoints to include model_final_checkpoint.model and model_final_checkpoint.model.pkl. You can either do this with model_latest.model or model_best.model.
 
 **Classification** <br>
 
+> Note: set self.inference_mode = False in custom_trainer.py before running.
+
 For classification inference on the validation set, run the following:
 ```
-nnUNet_predict -i "original_data/pancreas_validation/images" -o "original_data/pancreas_validation_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 --classification -f 5 -chk model_latest
+nnUNet_predict -i "original_data/pancreas_validation/images" -o "original_data/pancreas_validation_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 --classification -f 5 -chk model_latest --overwrite_existing
 ```
 
 For classification inference on the test set, run the following:
 ```
-nnUNet_predict -i "original_data/pancreas_test" -o "original_data/pancreas_test_labels" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 --classification -f 5 -chk model_latest
+nnUNet_predict -i "original_data/pancreas_test" -o "original_data/pancreas_test_labels" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 --classification -f 5 -chk model_latest  --overwrite_existing
+```
+
+**Segmentation** <br>
+
+> Note: set self.inference_mode = True in custom_trainer.py before running.
+
+For segmentation inference on the validation set, run the following:
+```
+nnUNet_predict -i "original_data/pancreas_validation/images" -o "original_data/pancreas_validation_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 -f 5 -chk model_best --overwrite_existing
+```
+
+For segmentation inference on the test set, run the following:
+```
+nnUNet_predict -i "original_data/pancreas_test" -o "original_data/pancreas_test_preds" -t 6 -tr nnUNetTrainerV2_Custom -m 3d_fullres --num_threads_preprocessing 28 -f 5 -chk model_best --overwrite_existing
 ```
 
 The data is prepared for predictions and visualized in [prediction.ipynb](https://github.com/alif-munim/nnUNet/blob/classification/prediction.ipynb).

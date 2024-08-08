@@ -87,7 +87,6 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         # self.lr_scheduler_patience = 20
         
         self.inference_mode = False
-        self.testing_mode = True
         
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
