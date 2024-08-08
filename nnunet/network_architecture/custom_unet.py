@@ -59,7 +59,7 @@ class Custom_UNet(SegmentationNetwork):
                  final_nonlin=softmax_helper, weightInitializer=InitWeights_He(1e-2), pool_op_kernel_sizes=None,
                  conv_kernel_sizes=None,
                  upscale_logits=False, convolutional_pooling=False, convolutional_upsampling=False, 
-                 multi_task=False,
+                 multi_task=False, inference_mode=False,
                  max_num_features=None, basic_block=ConvDropoutNormNonlin,
                  seg_output_use_bias=False):
         """
@@ -73,6 +73,7 @@ class Custom_UNet(SegmentationNetwork):
         """
         super(Custom_UNet, self).__init__()
         
+        self.inference_mode = inference_mode
         self.multi_task = multi_task
         self.classification_classes = 3
         self.classify_convolution = True
@@ -374,6 +375,29 @@ class Custom_UNet(SegmentationNetwork):
             nn.Linear(128, self.classification_classes)
         )
         
+        
+        # self.classification_final = nn.Sequential(
+        #     nn.Linear(800, 640),
+        #     nn.LayerNorm(640),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.Dropout(p=0.3),
+        #     nn.Linear(640, 512),
+        #     nn.LayerNorm(512),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.Dropout(p=0.3),
+        #     nn.Linear(512, 384),
+        #     nn.LayerNorm(384),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.Dropout(p=0.4),
+        #     nn.Linear(384, 256),
+        #     nn.LayerNorm(256),
+        #     nn.LeakyReLU(negative_slope=0.01, inplace=True),
+        #     nn.Dropout(p=0.4),
+        #     nn.Linear(256, self.classification_classes)
+        # )
+
+        
+        
             
     def global_avg_pool(self, x):
                 return F.adaptive_avg_pool3d(x, (1, 1, 1)).view(x.size(0), -1)
@@ -414,52 +438,55 @@ class Custom_UNet(SegmentationNetwork):
         else:
             seg_output = seg_outputs[-1]
             
-        if self.multi_task:
-
-            if self.classify_convolution:
-                class_outputs = []
-                class_decoder_features = []
-                x = bottleneck_features
-                for u in range(len(self.classification_tu)):
-                    x = self.classification_tu[u](x)
-                    x = torch.cat((x, skips[-(u + 1)]), dim=1)
-                    x = self.conv_blocks_classification[u](x)
-                    class_outputs.append(self.final_nonlin(self.class_outputs[u](x)))
-                    class_decoder_features.append(self.global_avg_pool(x))
-                    
-                if self.classify_decoder_features:
-                    class_features = torch.cat(class_decoder_features, dim=1) 
-                elif self.classify_all_features:
-                    class_features = torch.cat(encoder_features + class_decoder_features, dim=1)
-
-            else:
-                if self.classify_encoder_features: 
-                    class_features = torch.cat(encoder_features, dim=1) # 1120
-                elif self.classify_bottleneck_features:
-                    class_features = encoder_features[-1] # 320
-                elif self.classify_decoder_features:
-                    class_features = torch.cat(seg_decoder_features, dim=1) # 800
-                elif self.classify_all_features:
-                    class_features = torch.cat(encoder_features + seg_decoder_features, dim=1)
-                else:
-                    # When only using last layer
-                    if self._deep_supervision and self.do_ds:
-                        class_output = tuple([class_outputs[-1]] + [i(j) for i, j in
-                                                                zip(list(self.upscale_logits_ops)[::-1], class_outputs[:-1][::-1])])
-                    else:
-                        class_output = class_outputs[-1]
-
-                    class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
-
-                
-            class_logits = self.classification_final(class_features)               
-            return seg_output, class_logits
+        if self.inference_mode:
+            return seg_output
         else:
-            if self._deep_supervision and self.do_ds:
-                return tuple([seg_outputs[-1]] + [i(j) for i, j in
-                                                  zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
+            if self.multi_task:
+
+                if self.classify_convolution:
+                    class_outputs = []
+                    class_decoder_features = []
+                    x = bottleneck_features
+                    for u in range(len(self.classification_tu)):
+                        x = self.classification_tu[u](x)
+                        x = torch.cat((x, skips[-(u + 1)]), dim=1)
+                        x = self.conv_blocks_classification[u](x)
+                        class_outputs.append(self.final_nonlin(self.class_outputs[u](x)))
+                        class_decoder_features.append(self.global_avg_pool(x))
+
+                    if self.classify_decoder_features:
+                        class_features = torch.cat(class_decoder_features, dim=1) 
+                    elif self.classify_all_features:
+                        class_features = torch.cat(encoder_features + class_decoder_features, dim=1)
+
+                else:
+                    if self.classify_encoder_features: 
+                        class_features = torch.cat(encoder_features, dim=1) # 1120
+                    elif self.classify_bottleneck_features:
+                        class_features = encoder_features[-1] # 320
+                    elif self.classify_decoder_features:
+                        class_features = torch.cat(seg_decoder_features, dim=1) # 800
+                    elif self.classify_all_features:
+                        class_features = torch.cat(encoder_features + seg_decoder_features, dim=1)
+                    else:
+                        # When only using last layer
+                        if self._deep_supervision and self.do_ds:
+                            class_output = tuple([class_outputs[-1]] + [i(j) for i, j in
+                                                                    zip(list(self.upscale_logits_ops)[::-1], class_outputs[:-1][::-1])])
+                        else:
+                            class_output = class_outputs[-1]
+
+                        class_features = F.adaptive_avg_pool3d(class_output[0], (1, 1, 1)).view(class_output[0].size(0), -1)
+
+
+                class_logits = self.classification_final(class_features)               
+                return seg_output, class_logits
             else:
-                return seg_outputs[-1]
+                if self._deep_supervision and self.do_ds:
+                    return tuple([seg_outputs[-1]] + [i(j) for i, j in
+                                                      zip(list(self.upscale_logits_ops)[::-1], seg_outputs[:-1][::-1])])
+                else:
+                    return seg_outputs[-1]
 
             
             

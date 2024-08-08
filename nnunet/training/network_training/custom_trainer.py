@@ -86,6 +86,8 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
         self.use_focal_loss = False
         # self.lr_scheduler_patience = 20
         
+        self.inference_mode = True
+        
         with open('/scratch/alif/nnUNet/nnUNet_raw_data_base/nnUNet_raw_data/Task006_PancreasUHN/class_mapping.json', 'r') as f:
             self.class_mapping = json.load(f)
             self.class_mapping = {key.replace('_0000.nii.gz',''):value for key, value in self.class_mapping.items()}
@@ -202,7 +204,7 @@ class nnUNetTrainerV2_Custom(nnUNetTrainer):
                                     self.conv_per_stage, 2, conv_op, norm_op, norm_op_kwargs, dropout_op,
                                     dropout_op_kwargs,
                                     net_nonlin, net_nonlin_kwargs, True, False, lambda x: x, InitWeights_He(1e-2),
-                                    self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, upscale_logits=False, convolutional_pooling=True, convolutional_upsampling=True, multi_task=self.use_multi_task_model)
+                                    self.net_num_pool_op_kernel_sizes, self.net_conv_kernel_sizes, upscale_logits=False, convolutional_pooling=True, convolutional_upsampling=True, multi_task=self.use_multi_task_model, inference_mode=self.inference_mode)
 
         if torch.cuda.is_available():
             self.network.cuda()
