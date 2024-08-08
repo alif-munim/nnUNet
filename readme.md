@@ -31,7 +31,7 @@ To train, we use the custom trainer with the following command. The fold must be
 nnUNet_train 3d_fullres nnUNetTrainerV2_Custom Task006_PancreasUHN 0
 ```
 
-![Losses and Evaluation Metrics]([nnUNet/assets/final_progress-min.jpg](https://ibb.co/25CVC95))
+![Losses and Evaluation Metrics](https://ibb.co/25CVC95)
 
 Complete training run. Solid lines for segmentation, dash-dotted lines for classification. Red denotes training loss and yellow denotes validation loss. Green for evaluation performance (dice score for segmentation, accuracy for classification).
 
